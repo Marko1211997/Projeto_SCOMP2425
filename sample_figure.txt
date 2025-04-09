@@ -1,0 +1,3 @@
+drone_0_script.txt 0.0 0.0 10.0
+drone_1_script.txt 5.0 0.0 10.0
+drone_2_script.txt 0.0 5.0 10.0
