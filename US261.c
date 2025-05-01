@@ -29,6 +29,7 @@ typedef struct {
 Drone drones[MAX_DRONES];
 int drone_count = 0;
 bool simulation_running = true;
+int nlMax = 0;
 
 // Function prototypes
 void initialize_simulation(const char* figure_file);
@@ -70,7 +71,6 @@ void initialize_simulation(const char* figure_file) {
     char line[256];
     char script_file[256];
     double x, y, z;
-    
     // Read drone initial positions and script files from the figure file
     while (fgets(line, sizeof(line), file) && drone_count < MAX_DRONES) {
         if (sscanf(line, "%s %lf %lf %lf", script_file, &x, &y, &z) == 4) {
@@ -91,6 +91,10 @@ void initialize_simulation(const char* figure_file) {
             
             drone_count++;
         }
+        int nL = count_lines(script_file);
+        if (nL >= nlMax){
+            nlMax = nL;
+        } 
     }
     
     fclose(file);
@@ -122,8 +126,9 @@ void start_simulation() {
     
     // Main simulation loop
     int step = 0;
-    while (simulation_running && step < MAX_STEPS) {
+    while (simulation_running && step < MAX_STEPS && step < nlMax+1) {
         // Read positions from all drones
+        // TODO : ta a dar print do tempo 0 2x
         for (int i = 0; i < drone_count; i++) {
             Position pos;
             ssize_t bytes_read = read(drones[i].pipe_read, &pos, sizeof(Position));
@@ -135,16 +140,18 @@ void start_simulation() {
                 printf("Drone %d at position (%.2f, %.2f, %.2f) at time %.2f\n", 
                        i, pos.x, pos.y, pos.z, pos.time);
             }
+                
         }
-        
+        printf("\n");
         // Check for collisions
         check_collisions();
-        
         step++;
         usleep(100000);  // Sleep for 100ms between steps
+
+
     }
     
-    printf("Simulation completed after %d steps\n", step);
+    printf("Simulation completed after %d steps\n", step-1);
 }
 
 void drone_process(Drone* drone, const char* script_file) {
@@ -195,13 +202,11 @@ void check_collisions() {
             double dy = drones[i].y - drones[j].y;
             double dz = drones[i].z - drones[j].z;
             double distance = sqrt(dx*dx + dy*dy + dz*dz);
-            
+        
             if (distance < COLLISION_THRESHOLD) {
                 printf("COLLISION ALERT: Drones %d and %d are too close (%.2f meters)!\n", 
                        i, j, distance);
-                
-                // In a real system, you might want to stop the simulation or take corrective action
-                // For this example, we'll just report the collision
+                simulation_running = false;
             }
         }
     }
@@ -228,4 +233,22 @@ void signal_handler(int signum) {
     simulation_running = false;
     
     // In a real implementation, you might want to do more cleanup here
+}
+
+int count_lines(const char* filename) {
+    FILE* file = fopen(filename, "r");
+    if (!file) {
+        perror("Error opening file");
+        return -1;
+    }
+    
+    int count = 0;
+    char buffer[1024]; // Adjust buffer size as needed
+    
+    while (fgets(buffer, sizeof(buffer), file) != NULL) {
+        count++;
+    }
+    
+    fclose(file);
+    return count;
 }
