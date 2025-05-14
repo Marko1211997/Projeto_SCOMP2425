@@ -143,35 +143,40 @@ void start_simulation() {
             perror("Fork failed!");
             exit(EXIT_FAILURE);
         } else if (pid == 0) {
-            // processo filho (drone)
+            // Processo filho (drone)
             char script_file[256];
             sprintf(script_file, "drone_%d_script.txt", drones[i].id);
             drone_process(&drones[i], script_file);
             exit(EXIT_SUCCESS);
         } else {
-            // processo pai
+            // Processo pai
             drones[i].pid = pid;
             printf("Started drone %d with PID %d\n", i, pid);
         }
     }
     printf("\n");
-    // Main simulation loop
+    // Loop de simulação principal 
    
     while (simulation_running && step < MAX_STEPS && step < nlMax+1) {
-        // Read positions from all drones
+        // Ler posições de todos os drones
         double time = 0.0;
         bool any_active = false;
 
+        // Itera por todos os drones que foram inicializados
         for (int i = 0; i < drone_count; i++) {
             if (!drones[i].active) {
-                continue;  // Skip inactive drones
+                continue;  // Avança drones inativos
             }
 
             any_active = true;
             Position pos;
+
+            // Tenta ler os dados de posição do pipe de leitura do drone atual
             ssize_t bytes_read = read(drones[i].pipe_read, &pos, sizeof(Position));
             
             if (bytes_read == sizeof(Position)) {
+
+                // Se a leitura foi bem-sucedida, atualiza as coordenadas x, y, z do drone
                 drones[i].x = pos.x;
                 drones[i].y = pos.y;
                 drones[i].z = pos.z;
@@ -186,13 +191,13 @@ void start_simulation() {
             break;
         }
         printf("\n");
-        // Check for collisions
+        // Verifica colisões
         check_collisions(time);
         step++;
-        usleep(100000);  // Sleep for 100ms between steps
+        usleep(100000);  // Aguardra por 100ms entre passos
     }
     
-    // If we reached the end of all scripts without collisions, mark all drones as completed
+    // Se chegar ao fim de todos os scripts sem colisões, marcar todos os drones como concluídos
     if (!collision_detected && step >= nlMax) {
         for (int i = 0; i < drone_count; i++) {
             drones[i].active = true;
@@ -204,10 +209,10 @@ void start_simulation() {
 
 void drone_process(Drone* drone, const char* script_file) {
 
-    // Set up signal handler for termination
+    // Configurar o manipulador de sinais para terminação
     signal(SIGTERM, signal_handler);
 
-    // Close the read end of the pipe in the drone process
+    // Fechar a extremidade de leitura do pipe no processo do drone    
     close(drone->pipe_read);
     
     FILE* file = fopen(script_file, "r");
@@ -219,25 +224,25 @@ void drone_process(Drone* drone, const char* script_file) {
     char line[256];
     double time, x, y, z;
     
-    // Initial position
+    // Posição inicial
     Position current_pos = {drone->x, drone->y, drone->z, 0.0};
     
-    // Send initial position to main process
+    // Envia posição inicial para o processo principal    
     write(drone->pipe_write, &current_pos, sizeof(Position));
     
-    // Execute movement script
+    // Executar script de movimento
     while (fgets(line, sizeof(line), file) && simulation_running) {
         if (sscanf(line, "%lf %lf %lf %lf", &time, &x, &y, &z) == 4) {
-            // Update position
+            // Atualiza posição
             current_pos.x = x;
             current_pos.y = y;
             current_pos.z = z;
             current_pos.time = time;
             
-            // Send position to main process
+            // Manda posição para o processo principal
             write(drone->pipe_write, &current_pos, sizeof(Position));
             
-            // Sleep to simulate the passage of time
+            // Pausa para simular a passagem do tempo
             usleep((int)(time * 1000000));
         }
     }
@@ -247,17 +252,18 @@ void drone_process(Drone* drone, const char* script_file) {
 }
 
 void check_collisions(double time) {
-    // First, identify all collisions without terminating any drones
+
+    // Primeiro, identificar todas as colisões sem terminar nenhum drone
     bool will_terminate[MAX_DRONES] = {false};
 
     for (int i = 0; i < drone_count; i++) {
         if(!drones[i].active) {
-            continue;  // Skip inactive drones
+            continue;  // Avança drones inativos
         }
         for (int j = i + 1; j < drone_count; j++) {
-            // Calculate distance between drones
+            // Calcula a distância entre drones
             if (!drones[i].active || !drones[j].active) {
-                continue;  // Skip inactive drones
+                continue;  // Avança drones inativos
             }
             double dx = drones[i].x - drones[j].x;
             double dy = drones[i].y - drones[j].y;
@@ -268,7 +274,7 @@ void check_collisions(double time) {
                 printf("COLLISION ALERT: Drones %d and %d are too close (%.2f meters)!\n\n", 
                        i, j, distance);
                 
-                // Record the collision 
+                // Guarda as colisões 
                 collisions[collision_count].drone1_id = i;
                 collisions[collision_count].drone2_id = j;
                 collisions[collision_count].distance = distance;
