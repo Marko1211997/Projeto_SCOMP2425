@@ -10,7 +10,7 @@
 
 #define MAX_DRONES 100
 #define MAX_STEPS 1000
-#define MAX_COLLISIONS 5
+#define MAX_COLLISIONS 4
 #define COLLISION_THRESHOLD 1.0  // Minimum distance between drones (in meters)
 #define REPORT_FILENAME "simulation_report.txt"
 
@@ -46,7 +46,8 @@ bool collision_detected = false;
 Collision collisions[MAX_COLLISIONS];
 int collision_count = 0;
 char figure_filename[256];
-
+bool max_col = false;
+int step = 0;
 // Methods declarations
 void initialize_simulation(const char* figure_file);
 void start_simulation();
@@ -58,6 +59,8 @@ int count_lines(const char* filename);
 void generate_report();
 void terminate_drone();
 bool check_active_drones();
+void terminate_drone_all();
+
 
 int main(int argc, char* argv[]) {
     if (argc != 2) {
@@ -151,7 +154,7 @@ void start_simulation() {
     }
     printf("\n");
     // Main simulation loop
-    int step = 0;
+   
     while (simulation_running && step < MAX_STEPS && step < nlMax+1) {
         // Read positions from all drones
         double time = 0.0;
@@ -263,20 +266,19 @@ void check_collisions(double time) {
                 printf("COLLISION ALERT: Drones %d and %d are too close (%.2f meters)!\n\n", 
                        i, j, distance);
                 
-                // Record the collision if we haven't reached the maximum
-                if (collision_count < MAX_COLLISIONS) {
-                    collisions[collision_count].drone1_id = i;
-                    collisions[collision_count].drone2_id = j;
-                    collisions[collision_count].distance = distance;
-                    collisions[collision_count].time = time; 
-                    collisions[collision_count].x1 = drones[i].x;
-                    collisions[collision_count].y1 = drones[i].y;
-                    collisions[collision_count].z1 = drones[i].z;
-                    collisions[collision_count].x2 = drones[j].x;
-                    collisions[collision_count].y2 = drones[j].y;
-                    collisions[collision_count].z2 = drones[j].z;
-                    collision_count++;
-                }
+                // Record the collision 
+                collisions[collision_count].drone1_id = i;
+                collisions[collision_count].drone2_id = j;
+                collisions[collision_count].distance = distance;
+                collisions[collision_count].time = time; 
+                collisions[collision_count].x1 = drones[i].x;
+                collisions[collision_count].y1 = drones[i].y;
+                collisions[collision_count].z1 = drones[i].z;
+                collisions[collision_count].x2 = drones[j].x;
+                collisions[collision_count].y2 = drones[j].y;
+                collisions[collision_count].z2 = drones[j].z;
+                collision_count++;
+                
                                 
                 collision_detected = true;
 
@@ -294,6 +296,12 @@ void check_collisions(double time) {
     
     if (collision_detected) {
         printf("\n");
+    }
+    if (collision_count >= MAX_COLLISIONS) {
+        printf("Maximum number of collisions reached, stopping simulation\n");
+        max_col = true;
+        simulation_running = false;
+        terminate_drone_all();
     }
 }
 
@@ -323,7 +331,7 @@ void cleanup_simulation() {
 }
 
 void signal_handler(int signum) {
-    printf("Received signal %d, terminating simulation...\n", signum);
+    printf("Received signal %d, terminating...\n", signum);
     simulation_running = false;
 }
 
@@ -352,7 +360,7 @@ void terminate_drone(int drone_id) {
     if (!drones[drone_id].active) {
         return;  // Drone already inactive
     }
-    printf("Terminating drone %d due to collision\n", drone_id);
+    printf("Terminating drone %d \n", drone_id);
     
     // Send termination signal to the drone process
     kill(drones[drone_id].pid, SIGTERM);
@@ -367,6 +375,15 @@ void terminate_drone(int drone_id) {
     close(drones[drone_id].pipe_read);
     close(drones[drone_id].pipe_write);
 }
+
+void terminate_drone_all(){
+    for (int i = 0; i < drone_count; i++) {
+        if (drones[i].active) {
+            terminate_drone(i);
+        }
+    }
+}
+
 
 void generate_report() {
     FILE* report_file = fopen(REPORT_FILENAME, "w");
@@ -401,22 +418,7 @@ void generate_report() {
     for (int i = 0; i < drone_count; i++) {
         char script_file[256];
         sprintf(script_file, "drone_%d_script.txt", i);
-        int steps = 0;
-        if (drones[i].active) {
-            // Count the number of steps in the script file
-            steps = count_lines(script_file);
-        } else {
-            for(int j = 0; j < collision_count; j++) {
-                if (collisions[j].drone1_id == i || collisions[j].drone2_id == i) {
-                    steps = collisions[j].time;  // Use the time of the collision as the last step
-                }
-            }
-        }
-        
-        fprintf(report_file, "Drone %d:\n", i);
-        fprintf(report_file, "  Script: %s\n", script_file);
-        fprintf(report_file, "  Total Steps: %d\n", steps);
-        
+
         // Check if this drone was involved in any collision
         bool involved_in_collision = false;
         for (int j = 0; j < collision_count; j++) {
@@ -425,10 +427,31 @@ void generate_report() {
                 break;
             }
         }
+
+
+        int steps = 0;
+        if (drones[i].active && !max_col) {
+            // Count the number of steps in the script file
+            steps = count_lines(script_file);
+        }else if (involved_in_collision) {
+            for(int j = 0; j < collision_count; j++) {
+                if (collisions[j].drone1_id == i || collisions[j].drone2_id == i) {
+                    steps = collisions[j].time;  // Use the time of the collision as the last step
+                }
+            }
+        }else{ 
+            steps = step - 1;  // Use the last step before collision
+        }
+        
+        fprintf(report_file, "Drone %d:\n", i);
+        fprintf(report_file, "  Script: %s\n", script_file);
+        fprintf(report_file, "  Total Steps: %d\n", steps);
+        
+        
         
         // Determine the status message
         const char* status;
-        if (drones[i].active) {
+        if (drones[i].active && !max_col) {
             status = "Completed Successfully";
         } else if (involved_in_collision) {
             status = "Terminated (Collision)";
