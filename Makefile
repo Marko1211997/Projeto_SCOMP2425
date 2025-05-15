@@ -4,7 +4,7 @@ LDFLAGS = -lm
 
 TARGET = drone_simulation
 
-SRC = US261.c
+SRC = simulation.c
 
 all: $(TARGET)
 
