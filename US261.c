@@ -10,7 +10,7 @@
 
 #define MAX_DRONES 100
 #define MAX_STEPS 1000
-#define MAX_COLLISIONS 4 // Número máximo de colisões
+#define MAX_COLLISIONS 10 // Número máximo de colisões
 #define COLLISION_THRESHOLD 1.0  // Distância mínima entre drones (em metros)
 #define REPORT_FILENAME "simulation_report.txt"
 
@@ -77,6 +77,7 @@ int main(int argc, char* argv[]) {
 
     // Configurar o manipulador de sinais para terminação graciosa
     signal(SIGINT, signal_handler);
+    signal(SIGUSR1, signal_handler);
     signal(SIGTERM, signal_handler);
 
     initialize_simulation(argv[1]);
@@ -222,6 +223,7 @@ void drone_process(Drone* drone, const char* script_file) {
     // Configurar o manipulador de sinais para terminação
     signal(SIGTERM, signal_handler);
 
+
     // Fechar a extremidade de leitura do pipe no processo do drone    
     close(drone->pipe_read);
     
@@ -285,7 +287,8 @@ void check_collisions(double time) {
             if (distance < COLLISION_THRESHOLD) {
                 printf("COLLISION ALERT: Drones %d and %d are too close (%.2f meters)!\n\n", 
                        i, j, distance);
-                
+
+
                 // Guarda as colisões 
                 collisions[collision_count].drone1_id = i;
                 collisions[collision_count].drone2_id = j;
