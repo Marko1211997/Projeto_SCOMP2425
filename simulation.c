@@ -11,51 +11,44 @@
 
 #include <time.h>
 
-
-
 #define MAX_DRONES 100
 
 #define MAX_STEPS 1000
 
 #define MAX_COLLISIONS 10 // Número máximo de colisões
 
-#define COLLISION_THRESHOLD 1.0  // Distância mínima entre drones (em metros)
+#define COLLISION_THRESHOLD 1.0 // Distância mínima entre drones (em metros)
 
 #define REPORT_FILENAME "simulation_report.txt"
 
-
-
-typedef struct {
+typedef struct
+{
 
     int id;
 
-    double x, y, z;  // Coordenadas 3D
+    double x, y, z; // Coordenadas 3D
 
-    pid_t pid;       // ID do processo do drone
+    pid_t pid; // ID do processo do drone
 
-    int pipe_read;   // Extremidade de leitura do pipe
+    int pipe_read; // Extremidade de leitura do pipe
 
-    int pipe_write;  // Extremidade de escrita do pipe
+    int pipe_write; // Extremidade de escrita do pipe
 
-    bool active;     // Flag para indicar se o drone ainda está ativo
+    bool active; // Flag para indicar se o drone ainda está ativo
 
 } Drone;
 
-
-
-
-
-typedef struct {
+typedef struct
+{
 
     double x, y, z; // Coordenadas da posição no espaço 3D
 
-    double time;   // Tempo associado a esta posição
+    double time; // Tempo associado a esta posição
 
 } Position;
 
-
-
-typedef struct {
+typedef struct
+{
 
     int drone1_id;
 
@@ -65,13 +58,11 @@ typedef struct {
 
     double time; // Tempo em que a colisão ocorreu
 
-    double x1, y1, z1; 
+    double x1, y1, z1;
 
-    double x2, y2, z2;  
+    double x2, y2, z2;
 
 } Collision;
-
-
 
 // Variáveis globais
 
@@ -95,17 +86,13 @@ bool max_col = false;
 
 int step = 0;
 
-
-
 // Declaração dos métodos
 
-void initialize_simulation(const char* figure_file);
-
-
+void initialize_simulation(const char *figure_file);
 
 void start_simulation();
 
-void drone_process(Drone* drone, const char* script_file);
+void drone_process(Drone *drone, const char *script_file);
 
 void check_collisions();
 
@@ -115,7 +102,7 @@ void signal_handler_termination(int signum);
 
 void signal_handler(int signum);
 
-int count_lines(const char* filename);
+int count_lines(const char *filename);
 
 void generate_report();
 
@@ -125,77 +112,81 @@ bool check_active_drones();
 
 void terminate_drone_all();
 
+int main(int argc, char *argv[])
+{
+    int option;
+    do
+    {
+        printf("\n=== Figure Code Simulation System ===\n\n");
+        printf("Choose an option:\n");
+        printf("1 - Initiate Simulation\n");
+        printf("2 - Exit\n");
+        printf("Option: ");
+        scanf("%d", &option);
 
+        if (option != 1 && option != 2)
+        {
+            printf("Invalid option, please seleact try again.\n\n");
+        }
 
+    } while (option != 1 && option != 2);
 
+    if (option == 1)
+    {
+        printf("Starting simulation...\n\n");
 
-int main(int argc, char* argv[]) {
+        if (argc != 2)
+        {
 
+            printf("Usage: %s <figure_file>\n", argv[0]);
 
+            return 1;
+        }
 
-    if (argc != 2) {
+        // Armazenar o nome do ficheiro da figura para o relatório
 
-        printf("Usage: %s <figure_file>\n", argv[0]);
+        strncpy(figure_filename, argv[1], sizeof(figure_filename) - 1);
 
-        return 1;
+        figure_filename[sizeof(figure_filename) - 1] = '\0';
 
+        // Configurar o manipulador de sinais para terminação graciosa
+
+        signal(SIGUSR1, signal_handler);
+
+        signal(SIGTERM, signal_handler_termination);
+
+        signal(SIGINT, signal_handler);
+
+        initialize_simulation(argv[1]);
+
+        start_simulation();
+
+        generate_report();
+
+        cleanup_simulation();
+    }
+    else if (option == 2)
+    {
+        printf("Exiting...\n");
     }
 
-
-
-    // Armazenar o nome do ficheiro da figura para o relatório
-
-    strncpy(figure_filename, argv[1], sizeof(figure_filename) - 1);
-
-    figure_filename[sizeof(figure_filename) - 1] = '\0';
-
-
-
-    // Configurar o manipulador de sinais para terminação graciosa
-
-    signal(SIGUSR1, signal_handler);
-
-    signal(SIGTERM, signal_handler_termination);
-
-    signal(SIGINT, signal_handler);
-
-
-
-    initialize_simulation(argv[1]);
-
-    start_simulation();
-
-    generate_report();
-
-    cleanup_simulation();
-
-    
-
     return 0;
-
-
-
 }
-
-
 
 // Função para inicializar a simulação, lendo a configuração de um ficheiro.
 
-void initialize_simulation(const char* figure_file) {
+void initialize_simulation(const char *figure_file)
+{
 
+    FILE *file = fopen(figure_file, "r"); // Abre o ficheiro de figura especificado em modo de leitura ("r")
 
-
-    FILE* file = fopen(figure_file, "r");     // Abre o ficheiro de figura especificado em modo de leitura ("r")
-
-    if (!file) {
+    if (!file)
+    {
 
         perror("Error opening figure file!");
 
         exit(EXIT_FAILURE);
-
     }
-
-    
 
     char line[256];
 
@@ -203,13 +194,13 @@ void initialize_simulation(const char* figure_file) {
 
     double x, y, z;
 
-    
-
     // Ler as posições iniciais dos drones e os ficheiros de script do ficheiro de figura
 
-    while (fgets(line, sizeof(line), file) && drone_count < MAX_DRONES) {
+    while (fgets(line, sizeof(line), file) && drone_count < MAX_DRONES)
+    {
 
-        if (sscanf(line, "%s %lf %lf %lf", script_file, &x, &y, &z) == 4) {
+        if (sscanf(line, "%s %lf %lf %lf", script_file, &x, &y, &z) == 4)
+        {
 
             drones[drone_count].id = drone_count;
 
@@ -219,87 +210,72 @@ void initialize_simulation(const char* figure_file) {
 
             drones[drone_count].z = z;
 
-            drones[drone_count].active = true;  
-
-
+            drones[drone_count].active = true;
 
             // Criar pipe para comunicação
 
             int pipe_fd[2];
 
-            if (pipe(pipe_fd) == -1) {   // Cria um pipe. Se a criação falhar (-1), reporta um erro e termina.
+            if (pipe(pipe_fd) == -1)
+            { // Cria um pipe. Se a criação falhar (-1), reporta um erro e termina.
 
                 perror("Pipe creation failed");
 
                 exit(EXIT_FAILURE);
-
             }
-
-            
 
             drones[drone_count].pipe_read = pipe_fd[0]; // Armazena o descritor de ficheiro para leitura do pipe na estrutura do drone
 
             drones[drone_count].pipe_write = pipe_fd[1]; // Armazena o descritor de ficheiro para escrita do pipe na estrutura do drone
 
-            
-
             drone_count++;
-
         }
 
         int nL = count_lines(script_file);
 
-        if (nL >= nlMax){
+        if (nL >= nlMax)
+        {
 
             nlMax = nL;
-
-        } 
-
+        }
     }
-
-    
 
     fclose(file);
 
-    if (drone_count == 0) {
+    if (drone_count == 0)
+    {
 
         fprintf(stderr, "Error: No drones found in figure file!\n");
 
         exit(EXIT_FAILURE);
-
-    } else printf("Initialized %d drones for simulation\n", drone_count);
-
-
-
+    }
+    else
+        printf("Initialized %d drones for simulation\n", drone_count);
 }
-
-
 
 // Função para iniciar a simulação
 
-void start_simulation() {
-
-
+void start_simulation()
+{
 
     printf("Starting simulation with %d drones\n", drone_count);
 
-    
+    // Bifurcar (ou criar) um processo para cada drone
 
-    // Bifurcar (ou criar) um processo para cada drone    
-
-    for (int i = 0; i < drone_count; i++) {
+    for (int i = 0; i < drone_count; i++)
+    {
 
         pid_t pid = fork();
 
-        
-
-        if (pid == -1) {
+        if (pid == -1)
+        {
 
             perror("Fork failed!");
 
             exit(EXIT_FAILURE);
-
-        } else if (pid == 0) {
+        }
+        else if (pid == 0)
+        {
 
             // Processo filho (drone)
 
@@ -310,26 +286,24 @@ void start_simulation() {
             drone_process(&drones[i], script_file);
 
             exit(EXIT_SUCCESS);
-
-        } else {
+        }
+        else
+        {
 
             // Processo pai
 
             drones[i].pid = pid;
 
             printf("Started drone %d with PID %d\n", i, pid);
-
         }
-
     }
 
     printf("\n");
 
-    // Loop de simulação principal 
+    // Loop de simulação principal
 
-   
-
-    while (simulation_running && step < MAX_STEPS && step < nlMax+1) {
+    while (simulation_running && step < MAX_STEPS && step < nlMax + 1)
+    {
 
         // Ler posições de todos os drones
 
@@ -337,35 +311,27 @@ void start_simulation() {
 
         bool any_active = false;
 
-
-
         // Itera por todos os drones que foram inicializados
 
-        for (int i = 0; i < drone_count; i++) {
+        for (int i = 0; i < drone_count; i++)
+        {
 
-            if (!drones[i].active) {
+            if (!drones[i].active)
+            {
 
-                continue;  // Avança drones inativos
-
+                continue; // Avança drones inativos
             }
-
-
 
             any_active = true;
 
             Position pos;
 
-
-
             // Tenta ler os dados de posição do pipe de leitura do drone atual
 
             ssize_t bytes_read = read(drones[i].pipe_read, &pos, sizeof(Position));
 
-            
-
-            if (bytes_read == sizeof(Position)) {
-
-
+            if (bytes_read == sizeof(Position))
+            {
 
                 // Se a leitura foi bem-sucedida, atualiza as coordenadas x, y, z do drone
 
@@ -375,24 +341,20 @@ void start_simulation() {
 
                 drones[i].z = pos.z;
 
-                printf("Drone %d at position (%.2f, %.2f, %.2f) at time %.2f\n", 
+                printf("Drone %d at position (%.2f, %.2f, %.2f) at time %.2f\n",
 
                        i, pos.x, pos.y, pos.z, pos.time);
 
-                time = pos.time;       
-
+                time = pos.time;
             }
-
-                
-
         }
 
-        if (!any_active) {
+        if (!any_active)
+        {
 
             printf("All drones have completed or been terminated\n");
 
             break;
-
         }
 
         printf("\n");
@@ -403,89 +365,68 @@ void start_simulation() {
 
         step++;
 
-        usleep(100000);  // Aguardra por 100ms entre passos
-
+        usleep(100000); // Aguardra por 100ms entre passos
     }
-
-    
 
     // Se chegar ao fim de todos os scripts sem colisões, marcar todos os drones como concluídos
 
-    if (!collision_detected && step >= nlMax) {
+    if (!collision_detected && step >= nlMax)
+    {
 
-        for (int i = 0; i < drone_count; i++) {
+        for (int i = 0; i < drone_count; i++)
+        {
 
             drones[i].active = true;
-
         }
-
     }
 
-    
-
-    printf("Simulation completed after %d steps\n", step-1);
-
-
-
+    printf("Simulation completed after %d steps\n", step - 1);
 }
-
-
 
 // Função que define o comportamento de cada processo individual de drone.
 
 // Esta função é executada por cada processo filho criado para simular um drone.
 
-void drone_process(Drone* drone, const char* script_file) {
-
-
+void drone_process(Drone *drone, const char *script_file)
+{
 
     // Configurar o manipulador de sinais para terminação
 
-	signal(SIGUSR1, signal_handler);
+    signal(SIGUSR1, signal_handler);
 
-
-
-    // Fechar a extremidade de leitura do pipe no processo do drone    
+    // Fechar a extremidade de leitura do pipe no processo do drone
 
     close(drone->pipe_read);
 
-    
+    FILE *file = fopen(script_file, "r");
 
-    FILE* file = fopen(script_file, "r");
-
-    if (!file) {
+    if (!file)
+    {
 
         perror("Error opening drone script file!");
 
         exit(EXIT_FAILURE);
-
     }
-
-    
 
     char line[256];
 
     double time, x, y, z;
 
-    
-
     // Posição inicial
 
     Position current_pos = {drone->x, drone->y, drone->z, 0.0};
 
-    
-
-    // Envia posição inicial para o processo principal    
+    // Envia posição inicial para o processo principal
 
     write(drone->pipe_write, &current_pos, sizeof(Position));
 
-    
-
     // Executar script de movimento
 
-    while (fgets(line, sizeof(line), file) && simulation_running) {
+    while (fgets(line, sizeof(line), file) && simulation_running)
+    {
 
-        if (sscanf(line, "%lf %lf %lf %lf", &time, &x, &y, &z) == 4) {
+        if (sscanf(line, "%lf %lf %lf %lf", &time, &x, &y, &z) == 4)
+        {
 
             // Atualiza posição
 
@@ -497,62 +438,48 @@ void drone_process(Drone* drone, const char* script_file) {
 
             current_pos.time = time;
 
-            
-
             // Manda posição para o processo principal
 
             write(drone->pipe_write, &current_pos, sizeof(Position));
 
-            
-
             // Pausa para simular a passagem do tempo
 
             usleep((int)(time * 1000000));
-
         }
-
     }
-
-    
 
     fclose(file);
 
     close(drone->pipe_write);
-
-
-
 }
-
-
 
 // Função para verificar e processar colisões entre drones num determinado instante de tempo da simulação
 
-void check_collisions(double time) {
-
-
+void check_collisions(double time)
+{
 
     // Primeiro, identificar todas as colisões sem terminar nenhum drone
 
     bool will_terminate[MAX_DRONES] = {false};
 
+    for (int i = 0; i < drone_count; i++)
+    {
 
+        if (!drones[i].active)
+        {
 
-    for (int i = 0; i < drone_count; i++) {
-
-        if(!drones[i].active) {
-
-            continue;  // Avança drones inativos
-
+            continue; // Avança drones inativos
         }
 
-        for (int j = i + 1; j < drone_count; j++) {
+        for (int j = i + 1; j < drone_count; j++)
+        {
 
             // Calcula a distância entre drones
 
-            if (!drones[i].active || !drones[j].active) {
+            if (!drones[i].active || !drones[j].active)
+            {
 
-                continue;  // Avança drones inativos
-
+                continue; // Avança drones inativos
             }
 
             double dx = drones[i].x - drones[j].x;
@@ -561,21 +488,16 @@ void check_collisions(double time) {
 
             double dz = drones[i].z - drones[j].z;
 
-            double distance = sqrt(dx*dx + dy*dy + dz*dz);
+            double distance = sqrt(dx * dx + dy * dy + dz * dz);
 
-        
+            if (distance < COLLISION_THRESHOLD)
+            {
 
-            if (distance < COLLISION_THRESHOLD) {
-
-                printf("COLLISION ALERT: Drones %d and %d are too close (%.2f meters)!\n\n", 
+                printf("COLLISION ALERT: Drones %d and %d are too close (%.2f meters)!\n\n",
 
                        i, j, distance);
 
-
-
-
-
-                // Guarda as colisões 
+                // Guarda as colisões
 
                 collisions[collision_count].drone1_id = i;
 
@@ -583,7 +505,7 @@ void check_collisions(double time) {
 
                 collisions[collision_count].distance = distance;
 
-                collisions[collision_count].time = time; 
+                collisions[collision_count].time = time;
 
                 collisions[collision_count].x1 = drones[i].x;
 
@@ -599,45 +521,33 @@ void check_collisions(double time) {
 
                 collision_count++;
 
-                
-
-                                
-
                 collision_detected = true;
-
-
 
                 will_terminate[i] = true;
 
-                will_terminate[j] = true; 
-
-
-
+                will_terminate[j] = true;
             }
-
         }
-
     }
 
-    for (int i = 0; i < drone_count; i++) {
+    for (int i = 0; i < drone_count; i++)
+    {
 
-        if (will_terminate[i]) {
+        if (will_terminate[i])
+        {
 
             terminate_drone(i);
-
         }
-
     }
 
-    
-
-    if (collision_detected) {
+    if (collision_detected)
+    {
 
         printf("\n");
-
     }
 
-    if (collision_count >= MAX_COLLISIONS) {
+    if (collision_count >= MAX_COLLISIONS)
+    {
 
         printf("Maximum number of collisions reached, stopping simulation!\n");
 
@@ -646,136 +556,97 @@ void check_collisions(double time) {
         simulation_running = false;
 
         terminate_drone_all();
-
     }
-
 }
-
-
 
 // Função para verificar se ainda existem drones ativos na simulação
 
-bool check_active_drones() {
+bool check_active_drones()
+{
 
+    for (int i = 0; i < drone_count; i++)
+    {
 
+        if (drones[i].active)
+        {
 
-    for (int i = 0; i < drone_count; i++) {
-
-        if (drones[i].active) {
-
-            return true;  // Pelo menos um drone ainda está ativo
-
+            return true; // Pelo menos um drone ainda está ativo
         }
-
     }
 
-    return false;  // Nenhum drone ativo restante
-
-
-
+    return false; // Nenhum drone ativo restante
 }
-
-
 
 // Função para limpar os recursos da simulação
 
-void cleanup_simulation() {
-
-
+void cleanup_simulation()
+{
 
     // Enviar sinal de término para todos os processos dos drones
 
-    for (int i = 0; i < drone_count; i++) {
+    for (int i = 0; i < drone_count; i++)
+    {
 
         kill(drones[i].pid, SIGTERM);
 
         close(drones[i].pipe_read);
 
         close(drones[i].pipe_write);
-
     }
-
-    
 
     // Aguardar que todos os processos filhos terminem
 
-    for (int i = 0; i < drone_count; i++) {
+    for (int i = 0; i < drone_count; i++)
+    {
 
         waitpid(drones[i].pid, NULL, 0);
-
     }
 
-    
-
     printf("Simulation cleanup complete!\n");
-
-
-
 }
-
-
 
 // Função manipuladora de sinais (signal handler)
 
-void signal_handler(int signum) {
-
-
+void signal_handler(int signum)
+{
 
     // Imprime uma mensagem indicando que um sinal foi recebido e qual o número do sinal.
 
-    printf("Received signal %d (SIGUSR1), terminating...\n", signum); 
+    printf("Received signal %d (SIGUSR1), terminating...\n", signum);
 
     sigprocmask();
 
     simulation_running = false;
-
-
-
 }
-
-
 
 // Função manipuladora de sinais (signal handler for termination)
 
-void signal_handler_termination(int signum) {
-
-
+void signal_handler_termination(int signum)
+{
 
     // Imprime uma mensagem indicando que um sinal foi recebido e qual o número do sinal.
 
-    printf("Received signal %d (SIGTERM), terminating...\n", signum); 
+    printf("Received signal %d (SIGTERM), terminating...\n", signum);
 
     sigprocmask();
 
     simulation_running = false;
-
-
-
 }
-
-
-
-
-
-
 
 // Função para contar o número de linhas num ficheiro
 
-int count_lines(const char* filename) {
+int count_lines(const char *filename)
+{
 
+    FILE *file = fopen(filename, "r");
 
-
-    FILE* file = fopen(filename, "r");
-
-    if (!file) {
+    if (!file)
+    {
 
         perror("Error opening file");
 
         return -1;
-
     }
-
-    
 
     int count = 0;
 
@@ -783,117 +654,87 @@ int count_lines(const char* filename) {
 
     char buffer[1024];
 
-    
-
-    while (fgets(buffer, sizeof(buffer), file) != NULL) {
+    while (fgets(buffer, sizeof(buffer), file) != NULL)
+    {
 
         count++;
-
     }
-
-
 
     // Fecha o ficheiro após a leitura de todas as linhas.
 
     fclose(file);
 
     return count;
-
-
-
 }
-
-
 
 // Função para terminar um drone específico
 
-void terminate_drone(int drone_id) {
+void terminate_drone(int drone_id)
+{
 
+    if (drone_id < 0 || drone_id >= drone_count)
+    {
 
-
-    if (drone_id < 0 || drone_id >= drone_count) {
-
-        return;  // ID de drone inválido
-
+        return; // ID de drone inválido
     }
 
-    if (!drones[drone_id].active) {
+    if (!drones[drone_id].active)
+    {
 
-        return;  // Drone já inativo
-
+        return; // Drone já inativo
     }
 
     printf("Terminating drone %d \n", drone_id);
-
-    
 
     // Send termination signal to the drone process
 
     kill(drones[drone_id].pid, SIGUSR1);
 
-
-
     // Mark the drone as inactive and not completed
 
     drones[drone_id].active = false;
 
-    
-
     // Wait for the process to terminate
 
     waitpid(drones[drone_id].pid, NULL, 0);
-
-    
 
     // Close the pipe
 
     close(drones[drone_id].pipe_read);
 
     close(drones[drone_id].pipe_write);
-
-
-
 }
-
-
 
 // Função para terminar todos os drones ativos
 
-void terminate_drone_all(){
+void terminate_drone_all()
+{
 
+    for (int i = 0; i < drone_count; i++)
+    {
 
-
-    for (int i = 0; i < drone_count; i++) {
-
-        if (drones[i].active) {
+        if (drones[i].active)
+        {
 
             terminate_drone(i);
-
         }
-
     }
-
 }
-
-
 
 // Função para gerar o relatório da simulação
 
-void generate_report() {
+void generate_report()
+{
 
+    FILE *report_file = fopen(REPORT_FILENAME, "w");
 
-
-    FILE* report_file = fopen(REPORT_FILENAME, "w");
-
-    if (!report_file) {
+    if (!report_file)
+    {
 
         perror("Error creating report file!");
 
         return;
-
     }
-
-    
 
     // Get current time for the report
 
@@ -902,8 +743,6 @@ void generate_report() {
     char time_str[100];
 
     strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", localtime(&current_time));
-
-    
 
     // Write report header
 
@@ -917,21 +756,15 @@ void generate_report() {
 
     fprintf(report_file, "Figure File: %s\n\n", figure_filename);
 
-    
-
     // Write summary information
 
     fprintf(report_file, "-------------------------------------------------------\n");
 
     fprintf(report_file, "SUMMARY\n\n");
 
-    
-
     fprintf(report_file, "Total Number of Drones: %d\n", drone_count);
 
     fprintf(report_file, "Simulation Result: %s\n\n", collision_detected ? "FAILED" : "PASSED");
-
-    
 
     // Write drone status information
 
@@ -939,63 +772,56 @@ void generate_report() {
 
     fprintf(report_file, "DRONE's STATUS\n\n");
 
-    
-
-    for (int i = 0; i < drone_count; i++) {
+    for (int i = 0; i < drone_count; i++)
+    {
 
         char script_file[256];
 
         sprintf(script_file, "drone_%d_script.txt", i);
 
-
-
         // Check if this drone was involved in any collision
 
         bool involved_in_collision = false;
 
-        for (int j = 0; j < collision_count; j++) {
+        for (int j = 0; j < collision_count; j++)
+        {
 
-            if (collisions[j].drone1_id == i || collisions[j].drone2_id == i) {
+            if (collisions[j].drone1_id == i || collisions[j].drone2_id == i)
+            {
 
                 involved_in_collision = true;
 
                 break;
-
             }
-
         }
-
-
-
-
 
         int steps = 0;
 
-        if (drones[i].active && !max_col) {
+        if (drones[i].active && !max_col)
+        {
 
             // Count the number of steps in the script file
 
             steps = count_lines(script_file);
-
-        }else if (involved_in_collision) {
-
-            for(int j = 0; j < collision_count; j++) {
-
-                if (collisions[j].drone1_id == i || collisions[j].drone2_id == i) {
-
-                    steps = collisions[j].time;  // Use the time of the collision as the last step
-
-                }
-
-            }
-
-        }else{ 
-
-            steps = step - 1;  // Use the last step before collision
-
         }
+        else if (involved_in_collision)
+        {
 
-        
+            for (int j = 0; j < collision_count; j++)
+            {
+
+                if (collisions[j].drone1_id == i || collisions[j].drone2_id == i)
+                {
+
+                    steps = collisions[j].time; // Use the time of the collision as the last step
+                }
+            }
+        }
+        else
+        {
+
+            steps = step - 1; // Use the last step before collision
+        }
 
         fprintf(report_file, "Drone %d:\n", i);
 
@@ -1003,45 +829,37 @@ void generate_report() {
 
         fprintf(report_file, "  Total Steps: %d\n", steps);
 
-        
-
-        
-
-        
-
         // Determine the status message
 
-        const char* status;
+        const char *status;
 
-        if (drones[i].active && !max_col) {
+        if (drones[i].active && !max_col)
+        {
 
             status = "Completed Successfully!";
-
-        } else if (involved_in_collision) {
+        }
+        else if (involved_in_collision)
+        {
 
             status = "Terminated (Collision)!";
-
-        } else {
+        }
+        else
+        {
 
             status = "Incomplete!";
-
         }
-
-        
 
         fprintf(report_file, "  Status: %s\n", status);
 
-        fprintf(report_file, "  Final Position: (%.2f, %.2f, %.2f)\n\n", 
+        fprintf(report_file, "  Final Position: (%.2f, %.2f, %.2f)\n\n",
 
                 drones[i].x, drones[i].y, drones[i].z);
-
     }
-
-    
 
     // Write collision information if any
 
-    if (collision_detected) {
+    if (collision_detected)
+    {
 
         fprintf(report_file, "-------------------------------------------------------\n");
 
@@ -1049,37 +867,32 @@ void generate_report() {
 
         fprintf(report_file, "Total Number of Collisions: %d\n\n", collision_count);
 
-        
-
-        for (int i = 0; i < collision_count; i++) {
+        for (int i = 0; i < collision_count; i++)
+        {
 
             fprintf(report_file, "Collision %d:\n", i + 1);
 
-            fprintf(report_file, "  Drones Involved: %d and %d\n", 
+            fprintf(report_file, "  Drones Involved: %d and %d\n",
 
                     collisions[i].drone1_id, collisions[i].drone2_id);
 
-            fprintf(report_file, "  Time: %.2f seconds\n", collisions[i].time);        
+            fprintf(report_file, "  Time: %.2f seconds\n", collisions[i].time);
 
             fprintf(report_file, "  Distance between them: %.2f meters\n", collisions[i].distance);
 
-            fprintf(report_file, "  Drone %d Position: (%.2f, %.2f, %.2f)\n", 
+            fprintf(report_file, "  Drone %d Position: (%.2f, %.2f, %.2f)\n",
 
-                    collisions[i].drone1_id, 
+                    collisions[i].drone1_id,
 
                     collisions[i].x1, collisions[i].y1, collisions[i].z1);
 
-            fprintf(report_file, "  Drone %d Position: (%.2f, %.2f, %.2f)\n\n", 
+            fprintf(report_file, "  Drone %d Position: (%.2f, %.2f, %.2f)\n\n",
 
-                    collisions[i].drone2_id, 
+                    collisions[i].drone2_id,
 
                     collisions[i].x2, collisions[i].y2, collisions[i].z2);
-
         }
-
     }
-
-    
 
     // Write recommendations
 
@@ -1087,37 +900,30 @@ void generate_report() {
 
     fprintf(report_file, "RECOMMENDATIONS\n\n");
 
-    if (collision_detected) {
+    if (collision_detected)
+    {
 
         fprintf(report_file, "The figure is NOT safe to use.\nPlease modify the drone paths to avoid collisions.\n");
-
-        
 
         // List all collisions for recommendations
 
         fprintf(report_file, "Consider adjusting the paths of the following drones:\n");
 
-        for (int i = 0; i < collision_count; i++) {
+        for (int i = 0; i < collision_count; i++)
+        {
 
             fprintf(report_file, "- Drones %d and %d (collided at time %.2f)\n",
 
                     collisions[i].drone1_id, collisions[i].drone2_id, collisions[i].time);
-
         }
-
-    } else {
+    }
+    else
+    {
 
         fprintf(report_file, "The figure is safe to use.\nAll drones completed their paths without collisions.\n");
-
     }
-
-    
 
     fclose(report_file);
 
     printf("Simulation report generated: %s\n", REPORT_FILENAME);
-
-    
-
 }
-
