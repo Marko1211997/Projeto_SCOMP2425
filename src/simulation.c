@@ -135,24 +135,11 @@ void start_simulation() {
     }
     
     if (!collision_detected && step >= nlMax +1 ) {
-        // If simulation completed all steps without any collision_detected flag set,
-        // mark all drones as active for the report to show "Completed Successfully".
-        // This assumes drones that were not involved in collisions and ran full scripts are "active".
-        // The report logic will use this `active` flag.
+      
         for (int i = 0; i < drone_count; i++) {
-             // This part is tricky. If a drone was terminated by SIGINT, its `active` flag might still be true.
-             // If `!collision_detected`, it implies no drone was set to `active = false` by `terminate_drone` due to collision.
-             // The original code sets `drones[i].active = true;` for all.
-             // This ensures that if the simulation runs to the end without `collision_detected` being true,
-             // all drones are considered "completed successfully" by the report.
-             // This is only relevant if `simulation_running` is still true (i.e. not stopped by SIGINT/TERM).
+            
              if (simulation_running) { // Check if simulation wasn't stopped by signal
-                // drones[i].active = true; // Original logic.
-                // A drone is already active if it hasn't been terminated.
-                // This line might be redundant if active status is managed well.
-                // For report purposes, if !collision_detected and full steps, they are "completed".
-                // The report uses `drones[i].active && !max_col` for "Completed".
-                // So, ensuring `drones[i].active` is true here if no collisions is consistent.
+               
              }
         }
     }
