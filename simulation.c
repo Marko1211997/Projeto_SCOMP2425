@@ -36,6 +36,8 @@ typedef struct
 
     bool active; // Flag para indicar se o drone ainda está ativo
 
+    char script_file[256]; // Nome do ficheiro de script do drone
+
 } Drone;
 
 typedef struct
@@ -177,65 +179,49 @@ int main(int argc, char *argv[])
 
 void initialize_simulation(const char *figure_file)
 {
-
-    FILE *file = fopen(figure_file, "r"); // Abre o ficheiro de figura especificado em modo de leitura ("r")
-
+    FILE *file = fopen(figure_file, "r");
     if (!file)
     {
-
         perror("Error opening figure file!");
-
         exit(EXIT_FAILURE);
     }
 
     char line[256];
-
     char script_file[256];
-
     double x, y, z;
 
     // Ler as posições iniciais dos drones e os ficheiros de script do ficheiro de figura
-
     while (fgets(line, sizeof(line), file) && drone_count < MAX_DRONES)
     {
-
         if (sscanf(line, "%s %lf %lf %lf", script_file, &x, &y, &z) == 4)
         {
-
             drones[drone_count].id = drone_count;
-
             drones[drone_count].x = x;
-
             drones[drone_count].y = y;
-
             drones[drone_count].z = z;
-
             drones[drone_count].active = true;
+            
+            // Store the script filename
+            strncpy(drones[drone_count].script_file, script_file, sizeof(drones[drone_count].script_file) - 1);
+            drones[drone_count].script_file[sizeof(drones[drone_count].script_file) - 1] = '\0';
 
             // Criar pipe para comunicação
-
             int pipe_fd[2];
-
             if (pipe(pipe_fd) == -1)
-            { // Cria um pipe. Se a criação falhar (-1), reporta um erro e termina.
-
+            {
                 perror("Pipe creation failed");
-
                 exit(EXIT_FAILURE);
             }
 
-            drones[drone_count].pipe_read = pipe_fd[0]; // Armazena o descritor de ficheiro para leitura do pipe na estrutura do drone
-
-            drones[drone_count].pipe_write = pipe_fd[1]; // Armazena o descritor de ficheiro para escrita do pipe na estrutura do drone
+            drones[drone_count].pipe_read = pipe_fd[0];
+            drones[drone_count].pipe_write = pipe_fd[1];
 
             drone_count++;
         }
 
         int nL = count_lines(script_file);
-
         if (nL >= nlMax)
         {
-
             nlMax = nL;
         }
     }
@@ -257,44 +243,31 @@ void initialize_simulation(const char *figure_file)
 
 void start_simulation()
 {
-
     printf("Starting simulation with %d drones\n", drone_count);
 
     // Bifurcar (ou criar) um processo para cada drone
-
     for (int i = 0; i < drone_count; i++)
     {
-
         pid_t pid = fork();
 
         if (pid == -1)
         {
-
             perror("Fork failed!");
-
             exit(EXIT_FAILURE);
         }
         else if (pid == 0)
         {
-
             // Processo filho (drone)
-
-            char script_file[256];
-
-            sprintf(script_file, "drone_%d_script.txt", drones[i].id);
-
-            drone_process(&drones[i], script_file);
-
+            // Use the stored script filename instead of generating it
+            drone_process(&drones[i], drones[i].script_file);
             exit(EXIT_SUCCESS);
         }
         else
         {
-
             // Processo pai
-
             drones[i].pid = pid;
-
-            printf("Started drone %d with PID %d\n", i, pid);
+            printf("Started drone %d with PID %d using script %s\n", 
+                   i, pid, drones[i].script_file);
         }
     }
 
