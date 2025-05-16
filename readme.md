@@ -3,24 +3,76 @@
 ## Diagrama de Componentes
 
 <pre lang="markdown">
-           +---------------------+
-           |    Processo Pai     |
-           | (drone_simulator.c) |
-           +----------+----------+
-                      |
-              Pipes (um por drone)
-                      |
-                      v
-         +------------+------------+
-         |                         |
-+-------------------+   +-------------------+   ...   +-------------------+
-|  Processo Drone 0 |   |  Processo Drone 1 |   ...   |  Processo Drone N |
-| (executa script)  |   | (executa script)  |         | (executa script)  |
-+--------+----------+   +--------+----------+         +--------+----------+
-         |                       |                             |
-         | Script de Movimento   | Script de Movimento         | ...
-         v                       v                             v
- drone_0_script.txt      drone_1_script.txt             drone_N_script.txt
++---------------------------------------------+
+|                Main Process                 |
+|                 (main.c)                    |
++-----+----------------+----------------+-----+
+      |                |                |
+      v                v                v
++-------------+ +-------------+ +----------------+
+| Initialize  | |    Start    | |   Generate     |
+| Simulation  | | Simulation  | |   Report       |
++------+------+ +------+------+ +-------+--------+
+       |               |                |
+       v               v                v
++-------------+ +-------------+ +----------------+
+| Read Figure | | Fork        | | Write          |
+| File        | | Processes   | | Simulation     |
++------+------+ +------+------+ | Report         |
+       |               |        +----------------+
+       v               |
++-------------+        |
+| Create Drone|        |
+| Structures  |        |
++------+------+        |
+       |               |
+       v               |
++-------------+        |
+| Create Pipes|        |
++-------------+        |
+                       |
+                       v
+       +---------------+---------------+
+       |                               |
+       v                               v
++-------------+                +----------------+
+| Parent      |<--Pipes------->| Child Processes|
+| Process     |<--Signals----->| (Drones)       |
++------+------+                +-------+--------+
+       |                               |
+       v                               |
++-------------+                        |
+| Read        |                        |
+| Positions   |                        |
++------+------+                        |
+       |                               |
+       v                               |
++-------------+                        |
+| Check       |                        |
+| Collisions  |                        |
++------+------+                        |
+       |                               |
+       v                               |
++-------------+                        |
+| Terminate   |                        |
+| Colliding   |                        |
+| Drones      |                        |
++-------------+                        |
+                                       |
+                                       v
+                       +---------------+---------------+
+                       |               |               |
+                       v               v               v
+               +-------------+ +-------------+ +-------------+
+               | Drone       | | Drone       | | Drone       |
+               | Process 0   | | Process 1   | | Process N   |
+               +------+------+ +------+------+ +------+------+
+                      |               |               |
+                      v               v               v
+               +-------------+ +-------------+ +-------------+
+               | Read        | | Read        | | Read        |
+               | Script 0    | | Script 1    | | Script N    |
+               +-------------+ +-------------+ +-------------+
 </pre>
 
 ## Exemplo de Script de Movimento
