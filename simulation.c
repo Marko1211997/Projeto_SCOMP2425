@@ -298,8 +298,6 @@ void start_simulation()
         check_collisions(time);
 
         step++;
-
-        usleep(100000); // Aguardra por 100ms entre passos
     }
 
     // Se chegar ao fim de todos os scripts sem colisões, marcar todos os drones como concluídos
@@ -377,8 +375,7 @@ void drone_process(Drone *drone, const char *script_file)
             write(drone->pipe_write, &current_pos, sizeof(Position));
 
             // Pausa para simular a passagem do tempo
-
-            usleep((int)(time * 1000000));
+            usleep(1000000); // Aguardra por 1s entre passos
         }
     }
 
