@@ -467,7 +467,7 @@ void check_collisions(double time)
         if (will_terminate[i])
         {
 
-            terminate_drone(i);
+            terminate_drone(i, SIGUSR1);
         }
     }
 
@@ -602,7 +602,7 @@ int count_lines(const char *filename)
 
 // Função para terminar um drone específico
 
-void terminate_drone(int drone_id)
+void terminate_drone(int drone_id, int code)
 {
 
     if (drone_id < 0 || drone_id >= drone_count)
@@ -621,7 +621,7 @@ void terminate_drone(int drone_id)
 
     // Enviar sinal de terminação para o processo do drone
 
-    kill(drones[drone_id].pid, SIGUSR1);
+    kill(drones[drone_id].pid, code);
 
     // Marcar o drone como inativo
     // Isso evita que o drone seja processado novamente na simulação.
@@ -650,7 +650,7 @@ void terminate_drone_all()
         if (drones[i].active)
         {
 
-            terminate_drone(i);
+            terminate_drone(i, SIGTERM);
         }
     }
 }
