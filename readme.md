@@ -93,7 +93,7 @@ Conteúdo do 'drone_0_script.txt':
 
 #### US261 - Initiate simulation for a figure
 
-- Ler o "figure.txt" que contém ficheiros de script e posições iniciais dos drones. 
+- Ler o "sample_figure.txt" que contém ficheiros de script e posições iniciais dos drones. 
 - Criação de um processo filho para cada drone, usando o fork().
 - Cada drone lê o seu respetivo script e executa os movimentos definidos. 
 - Comunicação com o pai via pipe().
@@ -108,13 +108,14 @@ Conteúdo do 'drone_0_script.txt':
 #### US263 - Detect drone collisions in real time
 
 - Após cada leitura, calcula-sea distância entre drones. 
-- Se a distância for menor que 1.0, é registada uma colisão e enviados SIGTERM.
+- Se a distância for menor que 1.0, é registada uma colisão e enviados SIGUSR1.
+- Caso passe do limite de colisões ou chegue ao fim a simulação terminará, e eviado para os drones restantes SIGTERM.
 - Guarda-se o tempo e o ID dos drones envolvidos. 
 
 
 #### US264 - Synchronize drone execution with a time step
 
-- Simulação avança a cada "usleep(100000)" (100ms). 
+- Simulação avança a cada "usleep(1000000)" (1s). 
 - Cada drone lê a linha do script e aguarda o tempo relativo. 
 - Sincronização garantida por temporização dos processos.
 
@@ -123,9 +124,10 @@ Conteúdo do 'drone_0_script.txt':
 
 - Criação do ficheiro "simulation_report.txt" com os seguintes atributos:
     - Número de drones
-    - Estado final (executado ou colisão)
+    - Estado final (executado, colisão ou incompleto)
     - Timestamps de colisão 
     - Resultado da simulação (sucesso ou falha)
+    - Recomendação do que alterar
 
     
 ## Auto-avaliação de compromisso
