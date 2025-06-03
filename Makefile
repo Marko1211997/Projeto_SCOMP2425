@@ -12,7 +12,7 @@ $(TARGET): $(SRC)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 run: $(TARGET)
-	./$(TARGET) sample_figure.txt
+	./$(TARGET) sample_1_figure.txt
 
 clean:
 	rm -f $(TARGET)

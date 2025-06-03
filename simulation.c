@@ -321,66 +321,46 @@ void start_simulation()
 
 void drone_process(Drone *drone, const char *script_file)
 {
-
     // Configura o manipulador de sinais para terminação
-
     signal(SIGUSR1, signal_handler);
 
     // Fecha a extremidade de leitura do pipe no processo do drone
-
     close(drone->pipe_read);
 
     FILE *file = fopen(script_file, "r");
-
     if (!file)
     {
-
         perror("Error opening drone script file!");
-
         exit(EXIT_FAILURE);
     }
 
     char line[256];
+    double time, delta_x, delta_y, delta_z;
 
-    double time, x, y, z;
-
-    // Posição inicial
-
+    // Posição inicial (mantém a posição inicial do drone)
     Position current_pos = {drone->x, drone->y, drone->z, 0.0};
 
     // Envia posição inicial para o processo principal
-
     write(drone->pipe_write, &current_pos, sizeof(Position));
 
     // Executa script de movimento
-
     while (fgets(line, sizeof(line), file) && simulation_running)
     {
-
-        if (sscanf(line, "%lf %lf %lf %lf", &time, &x, &y, &z) == 4)
+        if (sscanf(line, "%lf %lf %lf %lf", &time, &delta_x, &delta_y, &delta_z) == 4)
         {
-
-            // Atualiza posição
-
-            current_pos.x = x;
-
-            current_pos.y = y;
-
-            current_pos.z = z;
-
+            // Atualiza posição somando os deltas à posição atual
+            current_pos.x += delta_x;
+            current_pos.y += delta_y;
+            current_pos.z += delta_z;
             current_pos.time = time;
 
             // Manda posição para o processo principal
-
             write(drone->pipe_write, &current_pos, sizeof(Position));
 
-            // Pausa para simular a passagem do tempo
-            usleep(1000000); // Aguardra por 1s entre passos
         }
     }
 
     fclose(file);
-
     close(drone->pipe_write);
 }
 
