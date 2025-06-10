@@ -122,6 +122,7 @@ void terminate_drone();
 void terminate_drone_all();
 
 void alldronesReady();
+void complete_all_active();
 
 
 //Create/open
@@ -479,6 +480,7 @@ void start_simulation()
 
     }
 
+    complete_all_active();
     
     threads_running = false;
     shared_mem->simulation_running = false;
@@ -597,20 +599,6 @@ void drone_process(int drone_id, const char *script_file){
                 } 
                 pthread_mutex_unlock(&drone_shared_mem->mutex);
             }
-        }else {
-            printf("Drone %d reached end of script at simulation step %d\n", 
-                drone_id, drone_shared_mem->current_step);
-                
-            pthread_mutex_lock(&drone_shared_mem->mutex);
-            drone_shared_mem->drones[drone_id].completed = true;
-            drone_shared_mem->drones[drone_id].active = false;
-            pthread_mutex_unlock(&drone_shared_mem->mutex);
-                
-           printf("Drone %d completed its script at final position (%.2f, %.2f, %.2f)\n", 
-                drone_id, current_pos_x, current_pos_y, current_pos_z);
-                
-            sem_post(drone_barrier_sem);
-            break;
         }
         sem_post(drone_barrier_sem);
         
@@ -1002,4 +990,14 @@ void alldronesReady()
     }
 
     printf("All drones are ready to start the simulation!\n");
+}
+
+void complete_all_active(){
+    // Completa todos os drones ativos
+    for (int i = 0; i < shared_mem->drone_count; i++) {
+        if (shared_mem->drones[i].active) {
+            shared_mem->drones[i].completed = true;
+        }
+    }
+    pthread_cond_broadcast(&shared_mem->step_cond);
 }
