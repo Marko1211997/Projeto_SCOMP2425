@@ -121,6 +121,9 @@ void generate_report();
 void terminate_drone();
 void terminate_drone_all();
 
+void alldronesReady();
+
+
 //Create/open
 //shm_open() //create a shared memory object
 //ftruncate() //difine size
@@ -236,9 +239,7 @@ int main(int argc, char *argv[])
         setup_semaphores();
         initialize_simulation(argv[1]);
         start_simulation();
-
         generate_report();
-
         cleanup_simulation();
     }
     else if (option == 2)
@@ -409,6 +410,8 @@ void start_simulation()
 
     printf("\n");
 
+    alldronesReady();
+
     // Loop de simulação principal
 
     shared_mem->current_step = 1;
@@ -526,6 +529,8 @@ void drone_process(int drone_id, const char *script_file){
 
     printf("Drone %d started at position (%.2f, %.2f, %.2f)\n", 
            drone_id, current_pos_x, current_pos_y, current_pos_z);
+    
+    sem_post(drone_barrier_sem); // Signal that this drone is ready
 
     while (drone_shared_mem->simulation_running && !termination_requested) {
         
@@ -857,7 +862,7 @@ void generate_report()
     fprintf(report_file, "-------------------------------------------------------\n");
     fprintf(report_file, "SUMMARY\n\n");
     fprintf(report_file, "Total Number of Drones: %d\n", shared_mem->drone_count);
-    fprintf(report_file, "Total Steps: %d", shared_mem->current_step - 1);
+    fprintf(report_file, "Total Steps: %d\n", shared_mem->current_step - 1);
     fprintf(report_file, "Total Collisions: %d\n", shared_mem->collision_count);
     fprintf(report_file, "Simulation Result: %s\n\n", (shared_mem->collision_count >= COLLISION_THRESHOLD) ? "FAILED (Collision limit exceeded)" :
      (shared_mem->collision_detected ? "FAILED (Collisions detected)" : "PASSED"));
@@ -866,8 +871,8 @@ void generate_report()
     fprintf(report_file, "DRONE's STATUS\n\n");
     for (int i = 0; i < shared_mem->drone_count; i++){
         char script_file[256];
-        sprintf(report_file, "Drone %d:\n", i);
-        sprintf(report_file, "Script file: %s", shared_mem->drones[i].script_file);
+        fprintf(report_file, "Drone %d:\n", i);
+        fprintf(report_file, "Script file: %s\n", shared_mem->drones[i].script_file);
 
         const char *status;
         if (shared_mem->drones[i].completed) {
@@ -914,7 +919,7 @@ void generate_report()
     // Escreve recomendações
     fprintf(report_file, "-------------------------------------------------------\n");
     fprintf(report_file, "RECOMMENDATIONS\n\n");
-    if (shared_mem->collision_count >= 0){
+    if (shared_mem->collision_count > 0){
         fprintf(report_file, "The figure is NOT safe to use.\nPlease modify the drone paths to avoid collisions.\n");
        
         // Sugestões para evitar colisões
@@ -985,4 +990,16 @@ void* report_generation_thread(void* arg)
 
     printf("Report generation thread terminated\n");
     return NULL;
+}
+
+void alldronesReady()
+{
+    printf("Waiting for all drones to be ready...\n");
+
+    // Espera que todos os drones estejam prontos para iniciar a simulação
+    for (int i = 0; i < shared_mem->drone_count; i++) {
+        sem_wait(barrier_sem);
+    }
+
+    printf("All drones are ready to start the simulation!\n");
 }
