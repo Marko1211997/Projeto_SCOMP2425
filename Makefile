@@ -3,7 +3,7 @@ CFLAGS = -Wall -Wextra -std=c99 -D_GNU_SOURCE
 LDFLAGS = -lrt -lpthread -lm
 
 TARGET = drone_simulation
-SOURCES = test.c
+SOURCES = simulationSprint2.c
 
 all: $(TARGET)
 

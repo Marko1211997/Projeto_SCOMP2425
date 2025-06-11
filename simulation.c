@@ -357,6 +357,7 @@ void drone_process(Drone *drone, const char *script_file)
             // Manda posição para o processo principal
             write(drone->pipe_write, &current_pos, sizeof(Position));
 
+            usleep(100000); //Apagar apos mudar a forma dos sinais!!!
         }
     }
 
