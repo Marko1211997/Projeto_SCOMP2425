@@ -31,6 +31,7 @@
 #define SHM_NAME "/drone_simulation_shm"
 #define SEM_STEP_NAME "/step_semaphore"
 #define SEM_BARRIER_NAME "/barrier_semaphore"
+#define SEM_PHASE "/phase_semaphore"
 
 typedef struct
 {
@@ -69,32 +70,43 @@ typedef struct {
     pthread_mutex_t mutex;
     pthread_cond_t step_cond;
     pthread_cond_t collision_cond;
+
+    int drones_completed_step;
+    bool step_in_progress;
     
 } SharedMemory;
 
 // Variáveis globais
 SharedMemory *shared_mem = NULL;
-sem_t *step_sem = NULL;
-sem_t *barrier_sem = NULL;
+
 //shared memory
 int fd = -1;
 void *ptr;
-//threads
-pthread_t collision_thread;
-pthread_t report_thread;
+
 //pthread_t monitor_thread;
-bool threads_running = true;
 //Drone drones[MAX_DRONES];
 //int drone_count = 0;
 //bool simulation_running = true;
-int nlMax = 0;
 //bool collision_detected = false;
 //Collision collisions[MAX_COLLISIONS];
 //int collision_count = 0;
-char figure_filename[256];
+
+//passar td para shared memory?
+bool threads_running = true;
+int nlMax = 0;
 bool max_col = false;
-int step = 0;
+//TMB ?? {
+char figure_filename[256];
 volatile sig_atomic_t termination_requested = 0; 
+//semaphores
+sem_t *step_sem = NULL; // Semaphore inicio do passo
+sem_t *barrier_sem = NULL; // Semaphore conlcusão do passo
+sem_t *phase_sem = NULL; // Semaphore concrolo de fase
+sem_t *drone_sem[MAX_DRONES]; // semaphore para cada drone
+//threads
+pthread_t collision_thread;
+pthread_t report_thread;
+//}
 
 // Declaração dos métodos
 
@@ -282,6 +294,8 @@ void setup_shared_memory()
     shared_mem->current_step = 0;
     shared_mem->drone_count = 0;
     shared_mem->collision_count = 0;
+    shared_mem->drones_completed_step = 0;
+    shared_mem->step_in_progress = false;
 
     // Initialize mutex and condition variables for process sharing
     pthread_mutexattr_t mutex_attr;
@@ -300,9 +314,22 @@ void setup_shared_memory()
 
 void setup_semaphores()
 {
+
     step_sem = sem_open(SEM_STEP_NAME, O_CREAT | O_EXCL, 0644, 0);
     barrier_sem = sem_open(SEM_BARRIER_NAME, O_CREAT | O_EXCL, 0644, 0);
-    
+    phase_sem = sem_open(SEM_PHASE, O_CREAT | O_EXCL, 0644, 1);
+
+    //semaforo individual
+    char sem_drone[32];
+    for (int i= 0; i < MAX_DRONES; i++){
+        sprintf(sem_drone, "/drone_sem_%d", i);
+        drone_sem[i]= sem_open(sem_drone, O_CREAT | O_EXCL, 0644, 0);
+        if (drone_sem[i] == SEM_FAILED){
+            perror("sem_open failed for a drone semaphore");
+            exit(EXIT_FAILURE);
+        }
+    }
+
     if (step_sem == SEM_FAILED || barrier_sem == SEM_FAILED) {
         perror("sem_open failed");
         exit(EXIT_FAILURE);
@@ -437,11 +464,17 @@ void start_simulation()
             pthread_mutex_unlock(&shared_mem->mutex);
             break;
         }
-
+        //sem_wait(phase_sem);
+        pthread_mutex_lock(&shared_mem->mutex);
+        shared_mem->step_in_progress = true;
+        shared_mem->drones_completed_step = 0;
+        pthread_mutex_unlock(&shared_mem->mutex);
         printf("Signaling %d active drones to execute %d step\n", active_count, shared_mem->current_step);
 
-        for (int i = 0; i < active_count; i++) {
-            sem_post(step_sem);
+        for (int i = 0; i < shared_mem->drone_count; i++) {
+            if (shared_mem->drones[i].active){
+                sem_post(drone_sem[i]);
+            }
         }
 
         printf("Waiting for all drones to complete %d step\n", shared_mem->current_step);
@@ -482,6 +515,7 @@ void start_simulation()
 
         printf("Step %d completed.\n", shared_mem->current_step);
         shared_mem->current_step++;
+        shared_mem->step_in_progress = false;
 
     }
 
@@ -542,7 +576,7 @@ void drone_process(int drone_id, const char *script_file){
 
     while (drone_shared_mem->simulation_running && !termination_requested) {
         
-        if (sem_wait(drone_step_sem) == -1) {
+        if (sem_wait(drone_sem[drone_id]) == -1) {
             if (errno == EINTR) {
                 if (termination_requested) break;
                 continue;
@@ -751,6 +785,17 @@ void clenup_shared_memory(){
     if (barrier_sem && barrier_sem != SEM_FAILED) {
         sem_close(barrier_sem);
         sem_unlink(SEM_BARRIER_NAME);
+    }
+    if (phase_sem && phase_sem != SEM_FAILED) {
+        sem_close(phase_sem);
+        sem_unlink(SEM_PHASE);
+    }
+
+    for (int i = 0; i < MAX_DRONES; i++) {
+        if (drone_sem[i] && drone_sem[i] != SEM_FAILED) {
+            sem_close(drone_sem[i]);
+            sem_unlink("/drone_sem_%d");
+        }
     }
 
 }
