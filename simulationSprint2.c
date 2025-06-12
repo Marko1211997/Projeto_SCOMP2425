@@ -29,7 +29,6 @@
 
 // semaphores
 #define SHM_NAME "/drone_simulation_shm"
-#define SEM_STEP_NAME "/step_semaphore"
 #define SEM_BARRIER_NAME "/barrier_semaphore"
 #define SEM_PHASE "/phase_semaphore"
 
@@ -87,19 +86,18 @@ int fd = -1;
 void *ptr;
 
 //passar td para shared memory?
-//TMB ?? {
 char figure_filename[256];
 volatile sig_atomic_t termination_requested = 0; 
 
 //semaphores
-sem_t *step_sem = NULL; // Semaphore inicio do passo
+//sem_t *step_sem = NULL; // Semaphore inicio do passo
 sem_t *barrier_sem = NULL; // Semaphore conlcusão do passo
 sem_t *phase_sem = NULL; // Semaphore concrolo de fase
 sem_t *drone_sem[MAX_DRONES]; // semaphore para cada drone
 //threads
 pthread_t collision_thread;
 pthread_t report_thread;
-//}
+
 
 // Declaração dos métodos
 
@@ -242,7 +240,6 @@ int main(int argc, char *argv[])
 void setup_shared_memory()
 {
     shm_unlink(SHM_NAME);
-    sem_unlink(SEM_STEP_NAME);
     sem_unlink(SEM_BARRIER_NAME);
 
     // Create shared memory segment
@@ -294,7 +291,6 @@ void setup_shared_memory()
 void setup_semaphores()
 {
 
-    step_sem = sem_open(SEM_STEP_NAME, O_CREAT | O_EXCL, 0644, 0);
     barrier_sem = sem_open(SEM_BARRIER_NAME, O_CREAT | O_EXCL, 0644, 0);
     phase_sem = sem_open(SEM_PHASE, O_CREAT | O_EXCL, 0644, 1);
 
@@ -310,7 +306,7 @@ void setup_semaphores()
         }
     }
 
-    if (step_sem == SEM_FAILED || barrier_sem == SEM_FAILED) {
+    if (barrier_sem == SEM_FAILED) {
         perror("sem_open failed");
         exit(EXIT_FAILURE);
     }
@@ -526,13 +522,7 @@ void drone_process(int drone_id, const char *script_file){
     }
 
     //open semaphores
-    sem_t *drone_step_sem = sem_open(SEM_STEP_NAME, 0);
     sem_t *drone_barrier_sem = sem_open(SEM_BARRIER_NAME, 0);
-
-    if (drone_step_sem == SEM_FAILED || drone_barrier_sem == SEM_FAILED) {
-        perror("Child: sem_open failed");
-        exit(EXIT_FAILURE);
-    }
 
     // Get initial position from shared memory
     pthread_mutex_lock(&drone_shared_mem->mutex);
@@ -618,7 +608,6 @@ void drone_process(int drone_id, const char *script_file){
     }
     munmap(drone_shared_mem, sizeof(SharedMemory));
     close(drone_shm_fd);
-    sem_close(drone_step_sem);
     sem_close(drone_barrier_sem);
         
     printf("Drone %d process exiting\n", drone_id); 
@@ -750,10 +739,6 @@ void clenup_shared_memory(){
     }
 
     // Cleanup semaphores 
-    if (step_sem && step_sem != SEM_FAILED) {
-        sem_close(step_sem);
-        sem_unlink(SEM_STEP_NAME);
-    }
     
     if (barrier_sem && barrier_sem != SEM_FAILED) {
         sem_close(barrier_sem);
