@@ -715,8 +715,8 @@ void check_collisions()
 
             terminate_drone(i, SIGUSR1);
             pthread_cond_signal(&shared_mem->collision_cond);
-            printf("Collision %d recorded. Drones %d TERMINATED. (Total collisions: %d/%d)\n", 
-                       shared_mem->collision_count, i, shared_mem->collision_count, MAX_COLLISIONS);
+            //printf("Collision %d recorded. Drones %d TERMINATED. (Total collisions: %d/%d)\n", 
+            //           shared_mem->collision_count, i, shared_mem->collision_count, MAX_COLLISIONS);
         }
     }
 
