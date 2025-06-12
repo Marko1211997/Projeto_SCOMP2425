@@ -385,18 +385,7 @@ void initialize_simulation(const char *figure_file)
         fprintf(stderr, "Error: No drones found in figure file!\n");
         exit(EXIT_FAILURE);
     }
-    else{
-        printf("Initialized %d drones for simulation\n", shared_mem->drone_count);
         
-        printf("\nInitial Drone Positions - Time 0)\n");
-        for (int i = 0; i < shared_mem->drone_count; i++) {
-            printf("Drone %d: position (%.2f, %.2f, %.2f)\n", 
-                i, shared_mem->drones[i].x, shared_mem->drones[i].y, shared_mem->drones[i].z);
-        }
-        printf("\n");
-        
-    }
-    
     pthread_mutex_unlock(&shared_mem->mutex);
 
 }
@@ -500,6 +489,7 @@ void start_simulation()
 
         // Verifica colisões
         check_collisions();
+        
         if (shared_mem->collision_count >= MAX_COLLISIONS) {
             // Verifica se o número máximo de colisões foi atingido
             printf("\n*** COLLISION LIMIT EXCEEDED ***\n");
@@ -574,7 +564,7 @@ void drone_process(int drone_id, const char *script_file){
     pthread_mutex_unlock(&drone_shared_mem->mutex);
     int script_line_number = 0; 
 
-    printf("Drone %d started at position (%.2f, %.2f, %.2f)\n", 
+    printf("Drone %d ready to start at position (%.2f, %.2f, %.2f)\n", 
            drone_id, current_pos_x, current_pos_y, current_pos_z);
     
     sem_post(drone_barrier_sem); // Signal that this drone is ready
@@ -1026,10 +1016,10 @@ void* report_generation_thread(void* arg)
         // Process unprocessed collisions
         for (int i = 0; i < shared_mem->collision_count; i++) {
             if (!shared_mem->collisions[i].processed) {
-                printf("Report: Processing collision between drones %d and %d at step %.0f\n",
-                       shared_mem->collisions[i].drone1_id,
-                       shared_mem->collisions[i].drone2_id,
-                       shared_mem->collisions[i].time);
+               // printf("Report: Processing collision between drones %d and %d at step %.0f\n",
+               //        shared_mem->collisions[i].drone1_id,
+               //        shared_mem->collisions[i].drone2_id,
+               //        shared_mem->collisions[i].time);
                 shared_mem->collisions[i].processed = true;
             }
         }
