@@ -944,7 +944,7 @@ void* collision_detection_thread(void* arg)
     printf("Collision detection thread started\n");
 
     while (shared_mem->threads_running && !termination_requested) {
-        usleep(100000); // Sleep to avoid busy waiting
+        //usleep(100000); // Sleep to avoid busy waiting
     }
 
     printf("Collision detection thread terminated\n");
