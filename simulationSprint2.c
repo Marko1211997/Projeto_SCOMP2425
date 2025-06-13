@@ -76,21 +76,20 @@ typedef struct {
     bool threads_running;
     int nlMax;
 
+    char figure_filename[256];
+
+    volatile sig_atomic_t termination_requested; 
+
+
 } SharedMemory;
 
 // Variáveis globais
 SharedMemory *shared_mem = NULL;
-
 //shared memory
 int fd = -1;
-void *ptr;
 
 //passar td para shared memory?
-char figure_filename[256];
-volatile sig_atomic_t termination_requested = 0; 
-
 //semaphores
-//sem_t *step_sem = NULL; // Semaphore inicio do passo
 sem_t *barrier_sem = NULL; // Semaphore conlcusão do passo
 sem_t *phase_sem = NULL; // Semaphore concrolo de fase
 sem_t *drone_sem[MAX_DRONES]; // semaphore para cada drone
@@ -140,7 +139,7 @@ void handle_signal(int signum, siginfo_t *info, void *context)
 
     } else {
         
-        termination_requested = 1;
+        shared_mem->termination_requested = 1;
         if(shared_mem) {
             shared_mem->simulation_running = false;
         }
@@ -213,17 +212,19 @@ int main(int argc, char *argv[])
             return 1;
         }
 
-        // Armazena o nome do ficheiro da figura para o relatório
-
-        strncpy(figure_filename, argv[1], sizeof(figure_filename) - 1);
-
-        figure_filename[sizeof(figure_filename) - 1] = '\0';
-
-        // Configura o manipulador de sinais para terminação graciosa
-
-        setup_signal_handling();
         setup_shared_memory();
         setup_semaphores();
+        setup_signal_handling();
+
+        // Armazena o nome do ficheiro da figura para o relatório
+        pthread_mutex_lock(&shared_mem->mutex);
+        strncpy(shared_mem->figure_filename, argv[1], sizeof(shared_mem->figure_filename) - 1);
+
+        shared_mem->figure_filename[sizeof(shared_mem->figure_filename) - 1] = '\0';
+        pthread_mutex_unlock(&shared_mem->mutex);
+        // Configura o manipulador de sinais para terminação graciosa
+
+        
         initialize_simulation(argv[1]);
         start_simulation();
         generate_report();
@@ -416,7 +417,7 @@ void start_simulation()
     pthread_mutex_unlock(&shared_mem->mutex);
 
     while (shared_mem->simulation_running && shared_mem->current_step < MAX_STEPS && 
-        shared_mem->current_step < shared_mem->nlMax + 1 && !termination_requested &&
+        shared_mem->current_step < shared_mem->nlMax + 1 && !shared_mem->termination_requested &&
         shared_mem->collision_count < MAX_COLLISIONS){
 
         printf("\n-SIMULATION STEP %d-\n", shared_mem->current_step);
@@ -537,18 +538,18 @@ void drone_process(int drone_id, const char *script_file){
     
     sem_post(drone_barrier_sem); // Signal that this drone is ready
 
-    while (drone_shared_mem->simulation_running && !termination_requested) {
+    while (drone_shared_mem->simulation_running && !shared_mem->termination_requested) {
         
         if (sem_wait(drone_sem[drone_id]) == -1) {
             if (errno == EINTR) {
-                if (termination_requested) break;
+                if (shared_mem->termination_requested) break;
                 continue;
             }
             perror("sem_wait failed");
             break;
         }
 
-        if (!drone_shared_mem->simulation_running || termination_requested) {
+        if (!drone_shared_mem->simulation_running || shared_mem->termination_requested) {
             sem_post(drone_barrier_sem);
             break;
         }
@@ -859,7 +860,7 @@ void generate_report()
     fprintf(report_file, "             DRONE FIGURE SIMULATION REPORT            \n");
     fprintf(report_file, "=======================================================\n\n");
     fprintf(report_file, "Generated: %s\n", time_str);
-    fprintf(report_file, "Figure File: %s\n\n", figure_filename);
+    fprintf(report_file, "Figure File: %s\n\n", shared_mem->figure_filename);
     // Escreve informações gerais da simulação
     fprintf(report_file, "-------------------------------------------------------\n");
     fprintf(report_file, "SUMMARY\n\n");
@@ -888,7 +889,7 @@ void generate_report()
                     break;
                 }
             }
-            status = involved_in_collision ? "Terminated (Collision)" : "Terminated (Other)";
+            status = involved_in_collision ? "Terminated (Collision)" : "Terminated (Incompleted)";
         } else {
             status = "Incomplete";
         }
@@ -943,7 +944,7 @@ void* collision_detection_thread(void* arg)
 {
     printf("Collision detection thread started\n");
 
-    while (shared_mem->threads_running && !termination_requested) {
+    while (shared_mem->threads_running && !shared_mem->termination_requested) {
         //usleep(100000); // Sleep to avoid busy waiting
     }
 
@@ -955,23 +956,23 @@ void* report_generation_thread(void* arg)
 {
     printf("Report generation thread started\n");
 
-    while (shared_mem->threads_running && !termination_requested) {
+    while (shared_mem->threads_running && !shared_mem->termination_requested) {
         pthread_mutex_lock(&shared_mem->mutex);
 
         struct timespec timeout;
         clock_gettime(CLOCK_REALTIME, &timeout);
         timeout.tv_sec += 1;
         
-        while (!shared_mem->collision_detected && shared_mem->threads_running && !termination_requested) {
+        while (!shared_mem->collision_detected && shared_mem->threads_running && !shared_mem->termination_requested) {
             int result = pthread_cond_timedwait(&shared_mem->collision_cond, &shared_mem->mutex, &timeout);
             if (result == ETIMEDOUT) {
-                if (termination_requested || !shared_mem->threads_running) break;
+                if (shared_mem->termination_requested || !shared_mem->threads_running) break;
                 clock_gettime(CLOCK_REALTIME, &timeout);
                 timeout.tv_sec += 1;
             }
         }
 
-        if (termination_requested || !shared_mem->threads_running) {
+        if (shared_mem->termination_requested || !shared_mem->threads_running) {
             pthread_mutex_unlock(&shared_mem->mutex);
             break;
         }
