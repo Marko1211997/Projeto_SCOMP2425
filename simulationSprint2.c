@@ -69,6 +69,7 @@ typedef struct {
     pthread_mutex_t mutex;
     pthread_cond_t step_cond;
     pthread_cond_t collision_cond;
+    pthread_cond_t ready;
 
     int drones_completed_step;
     bool step_in_progress;
@@ -80,6 +81,7 @@ typedef struct {
 
     volatile sig_atomic_t termination_requested; 
 
+    bool collisions_checked;
 
 } SharedMemory;
 
@@ -227,7 +229,6 @@ int main(int argc, char *argv[])
         
         initialize_simulation(argv[1]);
         start_simulation();
-        generate_report();
         cleanup_simulation();
     }
     else if (option == 2)
@@ -272,6 +273,7 @@ void setup_shared_memory()
     shared_mem->step_in_progress = false;
     shared_mem->threads_running = true;
     shared_mem->nlMax = 0;
+    shared_mem->collisions_checked = false;
 
 
     // Initialize mutex and condition variables for process sharing
@@ -286,6 +288,7 @@ void setup_shared_memory()
     pthread_condattr_setpshared(&cond_attr, PTHREAD_PROCESS_SHARED);
     pthread_cond_init(&shared_mem->step_cond, &cond_attr);
     pthread_cond_init(&shared_mem->collision_cond, &cond_attr);
+    pthread_cond_init(&shared_mem->ready, &cond_attr);
     pthread_condattr_destroy(&cond_attr);
 }
 
@@ -432,8 +435,8 @@ void start_simulation()
         }
         //sem_wait(phase_sem);
         pthread_mutex_lock(&shared_mem->mutex);
-        shared_mem->step_in_progress = true;
         shared_mem->drones_completed_step = 0;
+        shared_mem->collisions_checked = false;
         pthread_mutex_unlock(&shared_mem->mutex);
         printf("Signaling %d active drones to execute %d step\n", active_count, shared_mem->current_step);
 
@@ -464,8 +467,16 @@ void start_simulation()
         printf("\n");
 
         // Verifica colisões
-        check_collisions();
-        
+        //check_collisions();
+        // Wait for collision detection thread to finish checking
+
+        pthread_mutex_lock(&shared_mem->mutex);
+        shared_mem->step_in_progress = true;
+        pthread_cond_signal(&shared_mem->ready);
+        while (!shared_mem->collisions_checked && shared_mem->simulation_running) {
+            pthread_cond_wait(&shared_mem->ready, &shared_mem->mutex);
+        }
+        pthread_mutex_unlock(&shared_mem->mutex);
         if (shared_mem->collision_count >= MAX_COLLISIONS) {
             // Verifica se o número máximo de colisões foi atingido
             printf("\n*** COLLISION LIMIT EXCEEDED ***\n");
@@ -494,8 +505,11 @@ void start_simulation()
     shared_mem->threads_running = false;
     shared_mem->simulation_running = false;
 
-    pthread_cond_broadcast(&shared_mem->step_cond);
+    pthread_mutex_lock(&shared_mem->mutex);
     pthread_cond_broadcast(&shared_mem->collision_cond);
+    pthread_cond_broadcast(&shared_mem->step_cond);
+    pthread_cond_broadcast(&shared_mem->ready);
+    pthread_mutex_unlock(&shared_mem->mutex);
 
     pthread_join(collision_thread, NULL);
     pthread_join(report_thread, NULL);
@@ -623,7 +637,7 @@ void check_collisions()
     // Primeiro, identifica todas as colisões sem terminar nenhum drone
 
     bool will_terminate[MAX_DRONES] = {false};
-    pthread_mutex_lock(&shared_mem->mutex);
+    //pthread_mutex_lock(&shared_mem->mutex);
     shared_mem->collision_detected = false;
 
 
@@ -682,7 +696,6 @@ void check_collisions()
         {
 
             terminate_drone(i, SIGUSR1);
-            pthread_cond_signal(&shared_mem->collision_cond);
             //printf("Collision %d recorded. Drones %d TERMINATED. (Total collisions: %d/%d)\n", 
             //           shared_mem->collision_count, i, shared_mem->collision_count, MAX_COLLISIONS);
         }
@@ -691,10 +704,11 @@ void check_collisions()
     if (!shared_mem->collision_detected) {
         printf("No collisions detected at step %d\n", shared_mem->current_step);
     } else {
+        pthread_cond_signal(&shared_mem->collision_cond);
+
         printf("Total collisions so far: %d/%d\n", shared_mem->collision_count, MAX_COLLISIONS);
     }
-
-    pthread_mutex_unlock(&shared_mem->mutex);
+    //pthread_mutex_unlock(&shared_mem->mutex);
 }
 
 // Função para limpar os recursos da simulação
@@ -811,7 +825,6 @@ void terminate_drone(int drone_id, int code)
     // Isso evita que o drone seja processado novamente na simulação.
     
     shared_mem->drones[drone_id].active = false;
-
     // Aguarda que o processo do drone termine
     //tive que comentar pq dava erro quando terminava o resto dos drones por excesso de colisoes
     //waitpid(shared_mem->drones[drone_id].pid, NULL, 0);  
@@ -945,8 +958,29 @@ void* collision_detection_thread(void* arg)
     printf("Collision detection thread started\n");
 
     while (shared_mem->threads_running && !shared_mem->termination_requested) {
-        //usleep(100000); // Sleep to avoid busy waiting
+        pthread_mutex_lock(&shared_mem->mutex);
+
+        // Espera até que um passo de simulação esteja em progresso
+        while (!shared_mem->step_in_progress && shared_mem->threads_running && !shared_mem->termination_requested) {
+            pthread_cond_wait(&shared_mem->ready, &shared_mem->mutex);
+        }
+
+        if (!shared_mem->threads_running || shared_mem->termination_requested ) {
+            pthread_mutex_unlock(&shared_mem->mutex);
+            break;
+        }
+
+        // Verifica colisões
+        if(shared_mem->step_in_progress && !shared_mem->collisions_checked){
+            check_collisions();
+            // Notifica a thread de geração de relatórios que as colisões foram verificadas
+            shared_mem->collisions_checked = true;
+            pthread_cond_signal(&shared_mem->ready);
+        }
+        pthread_mutex_unlock(&shared_mem->mutex);
     }
+
+    
 
     printf("Collision detection thread terminated\n");
     return NULL;
@@ -958,24 +992,6 @@ void* report_generation_thread(void* arg)
 
     while (shared_mem->threads_running && !shared_mem->termination_requested) {
         pthread_mutex_lock(&shared_mem->mutex);
-
-        struct timespec timeout;
-        clock_gettime(CLOCK_REALTIME, &timeout);
-        timeout.tv_sec += 1;
-        
-        while (!shared_mem->collision_detected && shared_mem->threads_running && !shared_mem->termination_requested) {
-            int result = pthread_cond_timedwait(&shared_mem->collision_cond, &shared_mem->mutex, &timeout);
-            if (result == ETIMEDOUT) {
-                if (shared_mem->termination_requested || !shared_mem->threads_running) break;
-                clock_gettime(CLOCK_REALTIME, &timeout);
-                timeout.tv_sec += 1;
-            }
-        }
-
-        if (shared_mem->termination_requested || !shared_mem->threads_running) {
-            pthread_mutex_unlock(&shared_mem->mutex);
-            break;
-        }
 
         // Process unprocessed collisions
         for (int i = 0; i < shared_mem->collision_count; i++) {
@@ -990,6 +1006,7 @@ void* report_generation_thread(void* arg)
 
         pthread_mutex_unlock(&shared_mem->mutex);
     }
+    generate_report();
 
     printf("Report generation thread terminated\n");
     return NULL;
