@@ -9,29 +9,32 @@
 #include <time.h>
 #include <errno.h>
 
-//shared memory
+// Bibliotecas para memória partilhada
 #include <sys/mman.h>
 #include <sys/stat.h> 
 #include <fcntl.h> 
 #include <sys/types.h>
 
-//semaphores
+// Bibliotecas para semáforos
 #include <semaphore.h>
 
-//threads
+// Bibliotecas para threads
 #include <pthread.h>
 
-#define MAX_DRONES 100
+#define MAX_DRONES 100 // Número máximo de drones
 #define MAX_STEPS 1000
 #define MAX_COLLISIONS 10 // Número máximo de colisões
 #define COLLISION_THRESHOLD 1.0 // Distância mínima entre drones (em metros)
 #define REPORT_FILENAME "simulation_report.txt"
 
-// semaphores
+// Nomes para os objetos de sincronização (memória partilhada e semáforos)
 #define SHM_NAME "/drone_simulation_shm"
 #define SEM_BARRIER_NAME "/barrier_semaphore"
 #define SEM_PHASE "/phase_semaphore"
 
+
+
+// Estrutura para armazenar o estado de um único drone
 typedef struct
 {
     int id;
@@ -45,6 +48,8 @@ typedef struct
 
 } Drone;
 
+
+// Estrutura para armazenar informações sobre uma colisão detetada
 typedef struct
 {
     int drone1_id;
@@ -57,19 +62,19 @@ typedef struct
 
 } Collision;
 
-//shared memory structure
+// Estrutura principal da memória partilhada que contém todo o estado da simulação
 typedef struct {
-    Drone drones[MAX_DRONES];
-    Collision collisions[MAX_COLLISIONS];
-    int drone_count;
-    int collision_count;
-    int current_step;
-    bool simulation_running;
-    bool collision_detected;
-    pthread_mutex_t mutex;
-    pthread_cond_t step_cond;
-    pthread_cond_t collision_cond;
-    pthread_cond_t ready;
+   Drone drones[MAX_DRONES];             
+    Collision collisions[MAX_COLLISIONS]; 
+    int drone_count;                      
+    int collision_count;                 
+    int current_step;                     
+    bool simulation_running;              // Flag que controla se a simulação principal está a decorrer
+    bool collision_detected;              // Flag que indica se foi detetada uma colisão no passo atual
+    pthread_mutex_t mutex;                // Mutex para proteger o acesso à memória partilhada
+    pthread_cond_t step_cond;             // Variável de condição para sincronização de passos
+    pthread_cond_t collision_cond;        // Variável de condição para sinalizar colisões
+    pthread_cond_t ready;                 // Variável de condição para sincronizar threads
 
     int drones_completed_step;
     bool step_in_progress;
@@ -79,7 +84,7 @@ typedef struct {
 
     char figure_filename[256];
 
-    volatile sig_atomic_t termination_requested; 
+    volatile sig_atomic_t termination_requested; // Flag atómica para pedido de terminação (via sinal)
 
     bool collisions_checked;
 
@@ -87,26 +92,27 @@ typedef struct {
 
 // Variáveis globais
 SharedMemory *shared_mem = NULL;
-//shared memory
+
 int fd = -1;
 
-//passar td para shared memory?
-//semaphores
-sem_t *barrier_sem = NULL; // Semaphore conlcusão do passo
+// Semáforos
+sem_t *barrier_sem = NULL; // Semáforo de barreira
 sem_t *phase_sem = NULL; // Semaphore concrolo de fase
 sem_t *drone_sem[MAX_DRONES]; // semaphore para cada drone
-//threads
-pthread_t collision_thread;
-pthread_t report_thread;
+
+// Threads
+pthread_t collision_thread; // Handle da thread de deteção de colisão
+pthread_t report_thread;    // Handle da thread de geração de relatório
 
 
 // Declaração dos métodos
 
-//thread functions
-void* collision_detection_thread(void* arg);
-void* report_generation_thread(void* arg);
+// Funções das threads
+void *collision_detection_thread(void *arg);
+void *report_generation_thread(void *arg);
 
-//others
+
+//Outras funções
 void initialize_simulation(const char *figure_file);
 void start_simulation();
 
@@ -129,18 +135,21 @@ int count_active_drones();
 
 void setup_shared_memory();
 void setup_semaphores();
-//clenup memory
+
 void clenup_shared_memory_semaphores();
 
+
+// Função que trata os sinais recebidos (SIGINT, SIGTERM, SIGUSR1)
 void handle_signal(int signum, siginfo_t *info, void *context)
 {
+    // Se o sinal for SIGUSR1, é para um processo drone terminar individualmente
     if (signum == SIGUSR1) {
 
         printf("Drone process received termination signal, exiting (SIGUSR1)...\n");
         exit(EXIT_SUCCESS);
 
     } else {
-        
+        // Define a flag de pedido de terminação
         shared_mem->termination_requested = 1;
         if(shared_mem) {
             shared_mem->simulation_running = false;
@@ -153,25 +162,30 @@ void handle_signal(int signum, siginfo_t *info, void *context)
     }
 }
 
+// Configura os handlers de sinais utilizando sigaction 
 void setup_signal_handling()
 {
     struct sigaction sa;
 
-    memset(&sa, 0, sizeof(sa)); 
-    sa.sa_flags = SA_SIGINFO | SA_RESTART;  
-    sa.sa_sigaction = handle_signal;
-    sigemptyset(&sa.sa_mask); 
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_flags = SA_SIGINFO | SA_RESTART; // Usa sa_sigaction e reinicia chamadas de sistema interrompidas
+    sa.sa_sigaction = handle_signal;      // Define a função de tratamento
+    sigemptyset(&sa.sa_mask);             // Não bloqueia outros sinais durante o tratamento
 
+
+    // Regista o handler para SIGINT (Ctrl+C)
     if (sigaction(SIGINT, &sa, NULL) == -1) {
         perror("Failed to set SIGINT handler");
         exit(EXIT_FAILURE);
     }
     
+    // Regista o handler para SIGTERM (sinal de terminação padrão)
     if (sigaction(SIGTERM, &sa, NULL) == -1) {
         perror("Failed to set SIGTERM handler");
         exit(EXIT_FAILURE);
     }
     
+    // Regista o handler para SIGUSR1 
     if (sigaction(SIGUSR1, &sa, NULL) == -1) {
         perror("Failed to set SIGUSR1 handler");
         exit(EXIT_FAILURE);
@@ -180,11 +194,10 @@ void setup_signal_handling()
     printf("Signal handling configured with sigaction\n");
 }
 
-
+// Função principal do programa
 int main(int argc, char *argv[])
 {
     
-
     int option;
     do
     {
@@ -206,6 +219,7 @@ int main(int argc, char *argv[])
     {
         printf("Starting simulation...\n\n");
 
+        // Verifica se o ficheiro da figura foi passado como argumento
         if (argc != 2)
         {
 
@@ -214,6 +228,7 @@ int main(int argc, char *argv[])
             return 1;
         }
 
+        // Configura a memória partilhada, os semáforos e os handlers de sinal
         setup_shared_memory();
         setup_semaphores();
         setup_signal_handling();
@@ -224,12 +239,12 @@ int main(int argc, char *argv[])
 
         shared_mem->figure_filename[sizeof(shared_mem->figure_filename) - 1] = '\0';
         pthread_mutex_unlock(&shared_mem->mutex);
-        // Configura o manipulador de sinais para terminação graciosa
 
-        
+        // Inicializa, executa e limpa a simulação
         initialize_simulation(argv[1]);
         start_simulation();
         cleanup_simulation();
+
     }
     else if (option == 2)
     {
@@ -239,30 +254,34 @@ int main(int argc, char *argv[])
     return 0;
 }
 
+// Configura e inicializa o segmento de memória partilhada
 void setup_shared_memory()
 {
+    // Remove quaisquer instâncias antigas de memória partilhada ou semáforos com os mesmos nomes
     shm_unlink(SHM_NAME);
     sem_unlink(SEM_BARRIER_NAME);
 
-    // Create shared memory segment
+    // Cria um novo segmento de memória partilhada
     fd = shm_open(SHM_NAME, O_CREAT | O_EXCL | O_RDWR, 0644);
     if (fd == -1) {
         perror("shm_open failed");
         exit(EXIT_FAILURE);
     }
 
+    // Define o tamanho do segmento de memória partilhada
     if (ftruncate(fd, sizeof(SharedMemory)) == -1) {
         perror("ftruncate failed");
         exit(EXIT_FAILURE);
     }
 
+    // Mapeia o segmento de memória para o espaço de endereçamento do processo
     shared_mem = mmap(NULL, sizeof(SharedMemory), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     if (shared_mem == MAP_FAILED) {
         perror("mmap failed");
         exit(EXIT_FAILURE);
     }
 
-    // Initialize shared memory
+    // Inicializa a memória partilhada com valores padrão
     memset(shared_mem, 0, sizeof(SharedMemory));
     shared_mem->simulation_running = true;
     shared_mem->collision_detected = false;
@@ -276,7 +295,7 @@ void setup_shared_memory()
     shared_mem->collisions_checked = false;
 
 
-    // Initialize mutex and condition variables for process sharing
+    // Inicializa o mutex e as variáveis de condição para serem partilháveis entre processos
     pthread_mutexattr_t mutex_attr;
     pthread_mutexattr_init(&mutex_attr);
     pthread_mutexattr_setpshared(&mutex_attr, PTHREAD_PROCESS_SHARED);
@@ -292,13 +311,16 @@ void setup_shared_memory()
     pthread_condattr_destroy(&cond_attr);
 }
 
+// Configura e inicializa os semáforos nomeados
 void setup_semaphores()
 {
 
+    // Cria o semáforo de barreira, inicializado a 0
     barrier_sem = sem_open(SEM_BARRIER_NAME, O_CREAT | O_EXCL, 0644, 0);
+    // Cria o semáforo de fase, inicializado a 1
     phase_sem = sem_open(SEM_PHASE, O_CREAT | O_EXCL, 0644, 1);
 
-    //semaforo individual
+    // Cria um semáforo individual para cada drone, inicializados a 0
     char sem_drone[32];
     for (int i= 0; i < MAX_DRONES; i++){
         sprintf(sem_drone, "/drone_sem_%d", i);
@@ -317,7 +339,6 @@ void setup_semaphores()
 }
 
 // Função para inicializar a simulação, lendo a configuração de um ficheiro.
-
 void initialize_simulation(const char *figure_file)
 {
     pthread_mutex_lock(&shared_mem->mutex);
@@ -338,6 +359,7 @@ void initialize_simulation(const char *figure_file)
     // Lê as posições iniciais dos drones e os ficheiros de script do ficheiro de figura
     while (fgets(line, sizeof(line), file) && shared_mem->drone_count < MAX_DRONES)
     {
+        // Interpreta cada linha para obter o nome do script e as coordenadas iniciais
         if (sscanf(line, "%s %lf %lf %lf", script_file, &x, &y, &z) == 4)
         {
             shared_mem->drones[shared_mem->drone_count].id = shared_mem->drone_count;
@@ -353,6 +375,7 @@ void initialize_simulation(const char *figure_file)
             shared_mem->drone_count++;
         }
 
+        // Conta as linhas no ficheiro de script para determinar a duração da simulação
         int nL = count_lines(script_file);
         if (nL >= shared_mem->nlMax)
         {
@@ -371,13 +394,12 @@ void initialize_simulation(const char *figure_file)
 
 }
 
-// Função para iniciar a simulação
-
+// Função para iniciar e gerir o loop principal da simulação
 void start_simulation()
 {
     printf("Starting simulation with %d drones\n", shared_mem->drone_count);
 
-    //Create Threads
+    // Cria as threads de deteção de colisão e de geração de relatório
     if (pthread_create(&collision_thread, NULL, collision_detection_thread, NULL) != 0) {
         perror("Failed to create collision detection thread");
         exit(EXIT_FAILURE);
@@ -388,7 +410,7 @@ void start_simulation()
         exit(EXIT_FAILURE);
     }
 
-    // Bifurca (ou cria) um processo para cada drone
+    // Bifurca (cria) um processo filho para cada drone
     for (int i = 0; i < shared_mem->drone_count; i++){
         pid_t pid = fork();
         
@@ -421,6 +443,7 @@ void start_simulation()
     shared_mem->current_step = 1;
     pthread_mutex_unlock(&shared_mem->mutex);
 
+    // O loop continua enquanto a simulação estiver ativa, dentro dos limites de passos e colisões
     while (shared_mem->simulation_running && shared_mem->current_step < MAX_STEPS && 
         shared_mem->current_step < shared_mem->nlMax + 1 && !shared_mem->termination_requested &&
         shared_mem->collision_count < MAX_COLLISIONS){
@@ -436,12 +459,14 @@ void start_simulation()
             break;
         }
         //sem_wait(phase_sem);
+        // Reseta os contadores para o novo passo
         pthread_mutex_lock(&shared_mem->mutex);
         shared_mem->drones_completed_step = 0;
         shared_mem->collisions_checked = false;
         pthread_mutex_unlock(&shared_mem->mutex);
         printf("Signaling %d active drones to execute %d step\n", active_count, shared_mem->current_step);
 
+        // Acorda cada drone ativo para executar o seu próximo movimento
         for (int i = 0; i < shared_mem->drone_count; i++) {
             if (shared_mem->drones[i].active){
                 sem_post(drone_sem[i]);
@@ -450,7 +475,7 @@ void start_simulation()
 
         printf("Waiting for all drones to complete %d step\n", shared_mem->current_step);
         
-
+        // Espera na barreira até que todos os drones ativos tenham completado o passo
         for (int i = 0; i < active_count; i++) {
             sem_wait(barrier_sem);
         }
@@ -468,10 +493,9 @@ void start_simulation()
         }
         printf("\n");
 
-        // Verifica colisões
         //check_collisions();
-        // Wait for collision detection thread to finish checking
 
+        // Sinaliza a thread de deteção de colisão para começar a verificar
         pthread_mutex_lock(&shared_mem->mutex);
         shared_mem->step_in_progress = true;
         pthread_cond_signal(&shared_mem->ready);
@@ -492,6 +516,7 @@ void start_simulation()
         }
 
         printf("Step %d completed.\n", shared_mem->current_step);
+        // Avança para o próximo passo
         pthread_mutex_lock(&shared_mem->mutex);
         shared_mem->current_step++;
         shared_mem->step_in_progress = false;
@@ -499,20 +524,23 @@ void start_simulation()
 
     }
 
+    // Se a simulação terminou sem exceder o limite de colisões, marca os drones ativos como completos
     if(shared_mem->collision_count < MAX_COLLISIONS){
         complete_all_active();
     }
     
-    
+    // Sinaliza o fim da simulação para as threads
     shared_mem->threads_running = false;
     shared_mem->simulation_running = false;
 
+    // Acorda quaisquer threads que possam estar a dormir para que possam terminar
     pthread_mutex_lock(&shared_mem->mutex);
     pthread_cond_broadcast(&shared_mem->collision_cond);
     pthread_cond_broadcast(&shared_mem->step_cond);
     pthread_cond_broadcast(&shared_mem->ready);
     pthread_mutex_unlock(&shared_mem->mutex);
 
+    // Espera que as threads terminem a sua execução
     pthread_join(collision_thread, NULL);
     pthread_join(report_thread, NULL);
 
@@ -523,25 +551,27 @@ void start_simulation()
 // Esta função é executada por cada processo filho criado para simular um drone.
 
 void drone_process(int drone_id, const char *script_file){
+    // Cada processo drone configura o seu próprio handler de sinais
     setup_signal_handling();
 
-    //open shared memory
+    // Abre a memória partilhada existente
     int drone_shm_fd = shm_open(SHM_NAME, O_RDWR, 0);
     if (drone_shm_fd == -1) {
         perror("Child: shm_open failed");
         exit(EXIT_FAILURE);
     }
 
+    // Mapeia a memória partilhada para o seu espaço de endereçamento
     SharedMemory *drone_shared_mem = mmap(NULL, sizeof(SharedMemory), PROT_READ | PROT_WRITE, MAP_SHARED, drone_shm_fd, 0);
     if (drone_shared_mem == MAP_FAILED) {
         perror("Child: mmap failed");
         exit(EXIT_FAILURE);
     }
 
-    //open semaphores
+    // Abre o semáforo de barreira
     sem_t *drone_barrier_sem = sem_open(SEM_BARRIER_NAME, 0);
 
-    // Get initial position from shared memory
+    // Obtém a sua posição inicial da memória partilhada
     pthread_mutex_lock(&drone_shared_mem->mutex);
     double current_pos_x = drone_shared_mem->drones[drone_id].x;
     double current_pos_y = drone_shared_mem->drones[drone_id].y;
@@ -552,10 +582,13 @@ void drone_process(int drone_id, const char *script_file){
     printf("Drone %d ready to start at position (%.2f, %.2f, %.2f)\n", 
            drone_id, current_pos_x, current_pos_y, current_pos_z);
     
-    sem_post(drone_barrier_sem); // Signal that this drone is ready
+    // Sinaliza que este drone está pronto, incrementando o semáforo de barreira   
+    sem_post(drone_barrier_sem); 
 
+    // Loop principal do drone
     while (drone_shared_mem->simulation_running && !shared_mem->termination_requested) {
         
+        // Espera pelo seu semáforo individual, que será libertado pelo processo principal no início de cada passo
         if (sem_wait(drone_sem[drone_id]) == -1) {
             if (errno == EINTR) {
                 if (shared_mem->termination_requested) break;
@@ -565,18 +598,20 @@ void drone_process(int drone_id, const char *script_file){
             break;
         }
 
+        // Verifica novamente as condições de terminação após ser acordado
         if (!drone_shared_mem->simulation_running || shared_mem->termination_requested) {
             sem_post(drone_barrier_sem);
             break;
         }
 
-        // Check if this drone is still active - if not, exit immediately
+        // Verifica se este drone foi desativado (devido a uma colisão)
         if (!drone_shared_mem->drones[drone_id].active) {
             printf("Drone %d detected it was terminated due to collision, exiting process\n", drone_id);
-            sem_post(drone_barrier_sem);
-            break;  // Exit the loop and terminate this drone process
+            sem_post(drone_barrier_sem); // Liberta a barreira
+            break;  // Sai do loop e termina o processo
         }
 
+        // Abre o seu ficheiro de script para ler o próximo movimento
         FILE *file = fopen(script_file, "r");
         if (!file){
             perror("Error opening drone script file!");
@@ -588,6 +623,7 @@ void drone_process(int drone_id, const char *script_file){
         char line_found = false;
         int current_line = 0;
 
+        // Lê o ficheiro linha por linha até encontrar a linha correspondente ao passo atual
         while (fgets(line, sizeof(line), file)) {
                 if (current_line == script_line_number) {
                     line_found = true;
@@ -608,6 +644,8 @@ void drone_process(int drone_id, const char *script_file){
 
                 printf("Drone %d: Step %d - moved by (%.2f, %.2f, %.2f) to position (%.2f, %.2f, %.2f)\n", 
                         drone_id, drone_shared_mem->current_step, dx, dy, dz, current_pos_x, current_pos_y, current_pos_z);
+
+                // Atualiza a sua posição na memória partilhada
                 pthread_mutex_lock(&drone_shared_mem->mutex);
 
                 if (drone_shared_mem->drones[drone_id].active){
@@ -620,9 +658,12 @@ void drone_process(int drone_id, const char *script_file){
                 pthread_mutex_unlock(&drone_shared_mem->mutex);
             }
         }
+
+        // Sinaliza na barreira que completou o seu passo
         sem_post(drone_barrier_sem);
         
     }
+    // Limpa os recursos antes de terminar
     munmap(drone_shared_mem, sizeof(SharedMemory));
     close(drone_shm_fd);
     sem_close(drone_barrier_sem);
@@ -631,18 +672,16 @@ void drone_process(int drone_id, const char *script_file){
 }
 
 // Função para verificar e processar colisões entre drones num determinado instante de tempo da simulação
-
 void check_collisions()
 {
     printf("\nChecking for collisions\n");
 
     // Primeiro, identifica todas as colisões sem terminar nenhum drone
-
     bool will_terminate[MAX_DRONES] = {false};
     //pthread_mutex_lock(&shared_mem->mutex);
     shared_mem->collision_detected = false;
 
-
+    // Itera por todos os pares de drones ativos
     for (int i = 0; i < shared_mem->drone_count; i++){
 
         if (!shared_mem->drones[i].active){
@@ -655,6 +694,7 @@ void check_collisions()
                 continue; // Avança drones inativos
             }
 
+            // Calcula a distância euclidiana entre os dois drones
             double dx = shared_mem->drones[i].x - shared_mem->drones[j].x;
 
             double dy = shared_mem->drones[i].y - shared_mem->drones[j].y;
@@ -690,7 +730,7 @@ void check_collisions()
         }
     }
 
-
+    // Termina todos os drones que foram marcados para terminação
     for (int i = 0; i < shared_mem->drone_count; i++)
     {
 
@@ -708,19 +748,18 @@ void check_collisions()
     } else {
         pthread_cond_signal(&shared_mem->collision_cond);
 
+        // Sinaliza a thread de relatório que houve uma nova colisão
         printf("Total collisions so far: %d/%d\n", shared_mem->collision_count, MAX_COLLISIONS);
     }
     //pthread_mutex_unlock(&shared_mem->mutex);
 }
 
 // Função para limpar os recursos da simulação
-
 void cleanup_simulation()
 {
     printf("Cleaning up simulation...\n");
 
-    // Enviar sinal de término para todos os processos dos drones
-
+    // Envia sinal de término para todos os processos filho (drones) ainda ativos
     if (shared_mem) {
         for (int i = 0; i < shared_mem->drone_count; i++) {
             pid_t pid = shared_mem->drones[i].pid;
@@ -732,6 +771,8 @@ void cleanup_simulation()
 
     int status;
     pid_t pid;
+
+    // Espera que todos os processos filho terminem
     while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
         printf("Child process with PID %d terminated\n", pid);
     }
@@ -741,7 +782,7 @@ void cleanup_simulation()
     printf("Simulation cleanup complete!\n");
 }
 
-// Função para limpar a shared memory e semaphores
+// Função dedicada a libertar a memória partilhada e os semáforos
 void clenup_shared_memory_semaphores(){  
     
     if (shared_mem && shared_mem != MAP_FAILED) {
@@ -751,13 +792,13 @@ void clenup_shared_memory_semaphores(){
         munmap(shared_mem, sizeof(SharedMemory));
     }
 
+    // Fecha e remove o ficheiro de memória partilhada
     if (fd >= 0) {
         close(fd);
         shm_unlink(SHM_NAME);
     }
 
-    // Cleanup semaphores 
-    
+    // Limpa os semáforos nomeados    
     if (barrier_sem && barrier_sem != SEM_FAILED) {
         sem_close(barrier_sem);
         sem_unlink(SEM_BARRIER_NAME);
@@ -767,6 +808,7 @@ void clenup_shared_memory_semaphores(){
         sem_unlink(SEM_PHASE);
     }
 
+    // Limpa os semáforos individuais dos drones
     char drone_semaphore[32];
     for (int i = 0; i < MAX_DRONES; i++) {
         if (drone_sem[i] && drone_sem[i] != SEM_FAILED) {
@@ -779,7 +821,6 @@ void clenup_shared_memory_semaphores(){
 }
 
 // Função para contar o número de linhas num ficheiro
-
 int count_lines(const char *filename)
 {
     if (filename == NULL) return 0;
@@ -803,7 +844,6 @@ int count_lines(const char *filename)
 }
 
 // Função para terminar um drone específico
-
 void terminate_drone(int drone_id, int code)
 {
     if (drone_id < 0 || drone_id >= shared_mem->drone_count)
@@ -835,7 +875,6 @@ void terminate_drone(int drone_id, int code)
 }
 
 // Função para terminar todos os drones ativos
-
 void terminate_drone_all()
 {
 
@@ -855,7 +894,6 @@ void terminate_drone_all()
 }
 
 // Função para gerar o relatório da simulação
-
 void generate_report()
 {
     if (!shared_mem) return;
@@ -955,8 +993,7 @@ void generate_report()
     printf("Simulation report generated: %s\n", REPORT_FILENAME);
 }
 
-// Função para a thread de detecção de colisões
-
+// Função executada pela thread de deteção de colisões
 void* collision_detection_thread(void* arg)
 {
     printf("Collision detection thread started\n");
@@ -969,6 +1006,7 @@ void* collision_detection_thread(void* arg)
             pthread_cond_wait(&shared_mem->ready, &shared_mem->mutex);
         }
 
+        // Sai do loop se a simulação terminou
         if (!shared_mem->threads_running || shared_mem->termination_requested ) {
             pthread_mutex_unlock(&shared_mem->mutex);
             break;
@@ -991,7 +1029,6 @@ void* collision_detection_thread(void* arg)
 }
 
 // Função para a thread de geração de relatórios
-
 void* report_generation_thread(void* arg)
 {
     printf("Report generation thread started\n");
@@ -1012,12 +1049,15 @@ void* report_generation_thread(void* arg)
 
         pthread_mutex_unlock(&shared_mem->mutex);
     }
+    
+    // Gera o relatório final uma vez que a simulação tenha terminado
     generate_report();
 
     printf("Report generation thread terminated\n");
     return NULL;
 }
 
+// Função de sincronização que espera que todos os drones estejam prontos
 void alldronesReady()
 {
     printf("Waiting for all drones to be ready...\n");
@@ -1030,6 +1070,7 @@ void alldronesReady()
     printf("All drones are ready to start the simulation!\n");
 }
 
+// Marca todos os drones que ainda estão ativos como "completos" no final da simulação
 void complete_all_active(){
     // Completa todos os drones ativos
     for (int i = 0; i < shared_mem->drone_count; i++) {
@@ -1037,9 +1078,12 @@ void complete_all_active(){
             shared_mem->drones[i].completed = true;
         }
     }
+
+    // Acorda qualquer thread que possa estar à espera
     pthread_cond_broadcast(&shared_mem->step_cond);
 }
 
+// Função utilitária para contar o número de drones atualmente ativos
 int count_active_drones()
 {
     int count=0;
