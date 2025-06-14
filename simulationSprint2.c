@@ -130,7 +130,7 @@ int count_active_drones();
 void setup_shared_memory();
 void setup_semaphores();
 //clenup memory
-void clenup_shared_memory();
+void clenup_shared_memory_semaphores();
 
 void handle_signal(int signum, siginfo_t *info, void *context)
 {
@@ -326,6 +326,8 @@ void initialize_simulation(const char *figure_file)
     if (!file)
     {
         perror("Error opening figure file!");
+        cleanup_simulation();
+
         exit(EXIT_FAILURE);
     }
 
@@ -734,12 +736,13 @@ void cleanup_simulation()
         printf("Child process with PID %d terminated\n", pid);
     }
 
-    clenup_shared_memory();
+    clenup_shared_memory_semaphores();
 
     printf("Simulation cleanup complete!\n");
 }
 
-void clenup_shared_memory(){  
+// Função para limpar a shared memory e semaphores
+void clenup_shared_memory_semaphores(){  
     
     if (shared_mem && shared_mem != MAP_FAILED) {
         pthread_mutex_destroy(&shared_mem->mutex);
@@ -952,6 +955,7 @@ void generate_report()
     printf("Simulation report generated: %s\n", REPORT_FILENAME);
 }
 
+// Função para a thread de detecção de colisões
 
 void* collision_detection_thread(void* arg)
 {
@@ -986,6 +990,8 @@ void* collision_detection_thread(void* arg)
     return NULL;
 }
 
+// Função para a thread de geração de relatórios
+
 void* report_generation_thread(void* arg)
 {
     printf("Report generation thread started\n");
@@ -993,7 +999,7 @@ void* report_generation_thread(void* arg)
     while (shared_mem->threads_running && !shared_mem->termination_requested) {
         pthread_mutex_lock(&shared_mem->mutex);
 
-        // Process unprocessed collisions
+        // Processa collisiões não processadas
         for (int i = 0; i < shared_mem->collision_count; i++) {
             if (!shared_mem->collisions[i].processed) {
                // printf("Report: Processing collision between drones %d and %d at step %.0f\n",
