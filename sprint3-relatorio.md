@@ -17,7 +17,7 @@
                   ▼                ▼
         ┌─────────────────┐ ┌─────────────────────────────────┐
         │ Setup Resources │ │        Fork Processes           │
-        │ • Shared Memory │ │      Create Threads             │
+        │ • Shared Memory │ │        Create Threads           │
         │ • Semaphores    │ │                                 │
         │ • Signal Handle │ │                                 │
         └─────────────────┘ └─────────────┬───────────────────┘
@@ -48,16 +48,16 @@
                     │                     │         │ └─────────────┘ │
                     │                     │         └─────────────────┘
                     ▼                     ▼                     ▲
-        ┌─────────────────────┐ ┌─────────────────┐             │
-        │   SCRIPT FILES      │ │  REPORT FILE    │             │
-        │                     │ │                 │             │
-        │ ┌─────────────────┐ │ │ ┌─────────────┐ │             │
-        │ │   drone0.txt    │ │ │ │ simulation_ │ │             │
-        │ │   drone1.txt    │ │ │ │ report.txt  │ │             │
-        │ │      ...        │ │ │ └─────────────┘ │             │
-        │ │   droneN.txt    │ │ └─────────────────┘             │
-        │ └─────────────────┘ │                                 │
-        └─────────────────────┘                                 │
+        ┌──────────────────────┐ ┌─────────────────┐            │
+        │   SCRIPT FILES       │ │  REPORT FILE    │            │
+        │                      │ │                 │            │
+        │ ┌──────────────────┐ │ │ ┌─────────────┐ │            │
+        │ │drone_0_script.txt│ │ │ │ simulation_ │ │            │
+        │ │drone_1_script.txt│ │ │ │ report.txt  │ │            │
+        │ │      ...         │ │ │ └─────────────┘ │            │
+        │ │drone_N_script.txt│ │ └─────────────────┘            │
+        │ └──────────────────┘ │                                │
+        └──────────────────────┘                                │
                     │                                           │
                     └───────────────────────────────────────────┘
                               (Comunicação IPC)
@@ -113,4 +113,13 @@ Processo Principal  ←→  Shared Memory  ←→  Drone Processes
     Threads          Signal Handling         Script Files
 ```
 
+### Correções feitas do sprint passado baseado na defesa do mesmo
+- **Drone Script**: Em vez de indicar a coordenada onde vai estar, indica quando se move em cada coordenada em cada tempo
+- **Signals**: Uso de sigaction em vez de signal
 
+### Problemas encontrados e solução
+- **Semaphores**: Inicialmente tinhamos um semaforo para o Step, no inicio de cada Step mandava X (numero de drones ativos) sinais, porem acontecia que um ou mais drones acabavam muito
+                    rapido o processo então iniciavam novamente, fazendo assim 2 Steps num só. Solução foi criar um semaforo para cada drone, assim só manda 1 sinal a cada drone expecificamente garantindo que só fazem um Step de cada vez
+                  Ao testar o programa ao ocurrer um erro não chegava a parte de dar cleanup aos semaforos, então a solução provisória foi de criar um script a parte para limpar os semaforos
+- **Compilação do projeto**: Alguma intreferencia entre semaforos e processos, que com o waitpid(...) ao passar o limite de colizoeos o programa trava - Solução encontrada mas nao
+                                a melhor, decerteza, foi comentar a linha waipid(...), parte negativa é a existencia de processos zombies, para a continuação do codigo foi usado um scrip a parte que retirava esses processos zombies para poder compilar o projeto 

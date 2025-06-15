@@ -868,8 +868,10 @@ void terminate_drone(int drone_id, int code)
     // Isso evita que o drone seja processado novamente na simulação.
     
     shared_mem->drones[drone_id].active = false;
+
+
     // Aguarda que o processo do drone termine
-    //tive que comentar pq dava erro quando terminava o resto dos drones por excesso de colisoes
+    //tive que comentar por confilto com semaphoros, quando terminava o resto dos drones por excesso de colisoes, ponto negativo ficamos com processos filhos zombie //até a data sem solução
     //waitpid(shared_mem->drones[drone_id].pid, NULL, 0);  
     
 }
